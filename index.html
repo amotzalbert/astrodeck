@@ -813,6 +813,7 @@
           <div class="help-row"><span class="icon">🖱</span><span><kbd>Drag</kbd> to look around the sky · <kbd>Scroll</kbd> to zoom in/out.</span></div>
           <div class="help-row"><span class="icon">🎯</span><span><strong>Focus on…</strong> dropdown — pick any planet, Moon, or ISS and the view glides to track it. Live altitude ↑↓ markers show what's above/below the horizon.</span></div>
           <div class="help-row"><span class="icon">🌒</span><span>The <strong>Moon shows its real phase</strong> — crescent to full, lit from the Sun's true sky direction, with faint earthshine on the dark side.</span></div>
+          <div class="help-row"><span class="icon">🌌</span><span>The <strong>Milky Way</strong> band arcs across the sky in its true position — brightest toward the Sagittarius core, with the Great Rift dust lane. Toggleable; fades out first in twilight.</span></div>
           <div class="help-row"><span class="icon">✨</span><span><strong>Tonight</strong> panel — scans the coming dark window and lists every naked-eye planet + Moon: visible hours, peak altitude, compass direction. Tap any row to track it.</span></div>
           <div class="help-row"><span class="icon">🛰️</span><span><strong>ISS pass alert</strong> — a banner appears only on nights with a genuinely visible pass (station &gt;10°, sky dark, station sunlit). "Show me" jumps to the pass and tracks it.</span></div>
           <div class="help-row"><span class="icon">🧭</span><span>Live <strong>compass</strong> (bottom-left) shows your heading. Click it to snap back to North.</span></div>
@@ -2022,7 +2023,7 @@ const Sky = {
   group: null, starMats: [], lineGroup: null, constLabelGroup: null,
   starNameGroup: null, bodySprites: {}, ground: null, horizon: null,
   viewAz: (Loc.heading ?? 90) * DEG, viewAlt: 28 * DEG, _labelFade: -1,
-  showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: false, showISS: true,
+  showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: false, showISS: true, showMW: true,
 
   init() {
     const host = document.getElementById('sky-canvas');
@@ -2070,6 +2071,8 @@ const Sky = {
       this.group.add(body);
       this.bodySprites[name] = body;
     }
+
+    this.addMilkyWay();
 
     // Named-star labels
     this.starNameGroup = new THREE.Group();
@@ -2195,6 +2198,7 @@ const Sky = {
     document.getElementById('sky-toggles').appendChild(resetBtn);
 
     buildToggles('sky-toggles', [
+      { label: 'Milky Way', get: () => this.showMW, set: v => { this.showMW = v; this.mwGroup.visible = v; } },
       { label: 'Constellations', get: () => this.showConst, set: v => { this.showConst = v; if (this.lineGroup) this.lineGroup.visible = v; } },
       { label: 'Constellation names', get: () => this.showConstNames, set: v => { this.showConstNames = v; if (this.constLabelGroup) this.constLabelGroup.visible = v; } },
       { label: 'Star names', get: () => this.showStarNames, set: v => { this.showStarNames = v; this.starNameGroup.visible = v; } },
@@ -2209,6 +2213,65 @@ const Sky = {
     ]);
 
     this.loadCatalog();
+  },
+
+  // Procedural Milky Way: ~10k faint additive points along the true galactic
+  // plane (gal→eq J2000 rotation), denser & warmer toward the Sagittarius core,
+  // with the Great Rift dust lane. Lands exactly right among the constellations.
+  addMilkyWay() {
+    const AT = [                                              // galactic → equatorial (J2000)
+      -0.0548755604, 0.4941094279, -0.8676661490,
+      -0.8734370902, -0.4448296300, -0.1980763734,
+      -0.4838350155, 0.7469822445, 0.4559837762,
+    ];
+    this.mwGroup = new THREE.Group();
+    this._mwMats = [];
+    let s = 12345;
+    const rnd = () => ((s = s * 16807 % 2147483647) / 2147483647);
+    const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * 1.75;
+    const bins = [
+      { size: 2.2, op: 0.26, pos: [], col: [] },
+      { size: 4.0, op: 0.16, pos: [], col: [] },
+      { size: 7.0, op: 0.09, pos: [], col: [] },
+    ];
+    const place = (l, b) => {
+      const lr = l * DEG, br = b * DEG;
+      const gx = Math.cos(br) * Math.cos(lr), gy = Math.cos(br) * Math.sin(lr), gz = Math.sin(br);
+      const x = AT[0] * gx + AT[1] * gy + AT[2] * gz;
+      const y = AT[3] * gx + AT[4] * gy + AT[5] * gz;
+      const z = AT[6] * gx + AT[7] * gy + AT[8] * gz;
+      const bin = bins[Math.floor(rnd() * 3)];
+      const R = SKY_R * 0.99;
+      bin.pos.push(x * R, y * R, z * R);
+      const ln = ((l % 360) + 360) % 360;
+      const dc = Math.min(ln, 360 - ln);                      // angular distance from the core
+      const w = Math.exp(-dc * dc / (2 * 55 * 55));
+      bin.col.push(0.72 + 0.28 * w, 0.78 + 0.17 * w, 0.95 - 0.12 * w);
+    };
+    for (let i = 0; i < 14000; i++) {
+      const l = rnd() * 360;
+      const dc = Math.min(l, 360 - l);
+      if (rnd() > 0.30 + 0.70 * Math.exp(-dc * dc / (2 * 75 * 75))) continue;   // brighter toward Sgr
+      const sigma = 6.5 + 4.5 * Math.exp(-dc * dc / (2 * 50 * 50));
+      const b = gauss() * sigma;
+      if ((l < 65 || l > 350) && b > 0.5 && b < 5.5 && rnd() < 0.75) continue;  // Great Rift
+      place(l, b);
+    }
+    for (let i = 0; i < 1800; i++) place(gauss() * 16, gauss() * 9);            // central bulge
+    for (const bin of bins) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(bin.pos, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(bin.col, 3));
+      const mat = new THREE.PointsMaterial({
+        size: bin.size, map: starSprite, vertexColors: true, transparent: true, opacity: bin.op,
+        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false,
+      });
+      mat.userData.baseOpacity = bin.op;
+      this._mwMats.push(mat);
+      this.mwGroup.add(new THREE.Points(geo, mat));
+    }
+    this.mwGroup.visible = this.showMW;
+    this.group.add(this.mwGroup);
   },
 
   addStars(list) {                                           // list: [raDeg, decDeg, mag, bv?]
@@ -2456,6 +2519,8 @@ const Sky = {
     }
     this.scene.background = bg;
     for (const mat of this.starMats) mat.opacity = mat.userData.baseOpacity * starFade;
+    // The Milky Way is the first casualty of twilight — fade it out fast (cubic)
+    for (const m of this._mwMats) m.opacity = m.userData.baseOpacity * starFade ** 3;
     if (this.lineGroup) this.lineGroup.children[0].material.opacity = 0.55 * starFade;
     if (Math.abs(starFade - this._labelFade) > 0.02) {       // fade name labels with daylight
       this._labelFade = starFade;
