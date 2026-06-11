@@ -1361,7 +1361,7 @@ const Sky = {
   group: null, starMats: [], lineGroup: null, constLabelGroup: null,
   starNameGroup: null, bodySprites: {}, ground: null, horizon: null,
   viewAz: (Loc.heading ?? 90) * DEG, viewAlt: 28 * DEG, _labelFade: -1,
-  showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: true,
+  showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: false,
 
   init() {
     const host = document.getElementById('sky-canvas');
