@@ -325,7 +325,7 @@
     color: var(--text-dim); text-transform: uppercase;
     margin: 12px 0 5px;
   }
-  .modal input[type="text"], .modal input[type="number"] {
+  .modal input[type="text"], .modal input[type="number"], .modal select {
     width: 100%;
     background: rgba(255,255,255,0.05);
     border: 1px solid var(--border-soft);
@@ -334,7 +334,9 @@
     font-family: var(--mono); font-size: 13px;
     padding: 9px 11px;
   }
-  .modal input:focus { outline: none; border-color: rgba(94,234,212,0.5); }
+  .modal select { appearance: none; cursor: pointer; }
+  .modal select option { background: var(--panel-solid); color: var(--text); }
+  .modal input:focus, .modal select:focus { outline: none; border-color: rgba(94,234,212,0.5); }
   .modal .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .modal .actions { display: flex; gap: 8px; margin-top: 20px; }
   .modal .actions .text-btn { flex: 1; padding: 10px; }
@@ -563,6 +565,17 @@
         <input type="number" id="loc-lon" step="0.0001" min="-180" max="180">
       </div>
     </div>
+    <label>Facing — default view direction</label>
+    <select id="loc-heading">
+      <option value="0">North</option>
+      <option value="45">North-East</option>
+      <option value="90" selected>East</option>
+      <option value="135">South-East</option>
+      <option value="180">South</option>
+      <option value="225">South-West</option>
+      <option value="270">West</option>
+      <option value="315">North-West</option>
+    </select>
     <div class="geo-status" id="geo-status"></div>
     <div class="actions">
       <button class="text-btn" id="loc-geo">📡 Use my location</button>
@@ -730,16 +743,22 @@ const Sim = {
   get d() { return dDays(this.jd); },
 };
 
-const DEFAULT_LOC = { name: 'Tel Aviv (default)', lat: 32.0809, lon: 34.7806 };
+const DEFAULT_LOC = { name: 'Arad', lat: 31.2589, lon: 35.2128, heading: 90 };
+const HEADING_NAMES = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
 let Loc = (() => {
-  try { return JSON.parse(localStorage.getItem('astrodeck.location')) || DEFAULT_LOC; }
-  catch { return DEFAULT_LOC; }
+  try {
+    const saved = JSON.parse(localStorage.getItem('astrodeck.location'));
+    if (!saved || saved.name === 'Tel Aviv (default)') return DEFAULT_LOC;  // migrate old default
+    if (saved.heading == null) saved.heading = 90;
+    return saved;
+  } catch { return DEFAULT_LOC; }
 })();
 function saveLoc(l) { Loc = l; localStorage.setItem('astrodeck.location', JSON.stringify(l)); refreshLocChip(); }
 function refreshLocChip() {
   const fmt = (v, pos, neg) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? pos : neg}`;
+  const hdg = HEADING_NAMES[Math.round((Loc.heading ?? 90) / 45) % 8];
   document.getElementById('loc-label').innerHTML =
-    `<b>${Loc.name}</b>&nbsp; ${fmt(Loc.lat, 'N', 'S')} ${fmt(Loc.lon, 'E', 'W')}`;
+    `<b>${Loc.name}</b>&nbsp; ${fmt(Loc.lat, 'N', 'S')} ${fmt(Loc.lon, 'E', 'W')} · ${hdg}`;
 }
 
 /* =====================================================================
@@ -1289,7 +1308,7 @@ const Sky = {
   renderer: null, labelRenderer: null, scene: null, camera: null,
   group: null, starMats: [], lineGroup: null, constLabelGroup: null,
   starNameGroup: null, bodySprites: {}, ground: null, horizon: null,
-  viewAz: 180 * DEG, viewAlt: 28 * DEG, _labelFade: -1,
+  viewAz: (Loc.heading ?? 90) * DEG, viewAlt: 28 * DEG, _labelFade: -1,
   showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: true,
 
   init() {
@@ -1487,9 +1506,9 @@ const Sky = {
     } catch (err) { console.warn('Constellation names unavailable', err); }
   },
 
-  // Ease back to the default POV (south-facing, 28° up, default zoom)
+  // Ease back to the default POV (saved heading, 28° up, default zoom)
   resetView() {
-    this._resetTarget = { az: 180 * DEG, alt: 28 * DEG, fov: 60 };
+    this._resetTarget = { az: (Loc.heading ?? 90) * DEG, alt: 28 * DEG, fov: 60 };
   },
 
   update() {
@@ -1747,6 +1766,7 @@ function openLocModal() {
   document.getElementById('loc-name').value = Loc.name;
   document.getElementById('loc-lat').value = Loc.lat;
   document.getElementById('loc-lon').value = Loc.lon;
+  document.getElementById('loc-heading').value = String(Loc.heading ?? 90);
   document.getElementById('geo-status').textContent = '';
   locModal.classList.add('open');
 }
@@ -1774,8 +1794,11 @@ document.getElementById('loc-save').onclick = () => {
     document.getElementById('geo-status').textContent = 'Latitude/longitude out of range.';
     return;
   }
-  saveLoc({ name: document.getElementById('loc-name').value.trim() || 'Home', lat, lon });
+  const heading = parseInt(document.getElementById('loc-heading').value, 10) || 0;
+  const headingChanged = heading !== Loc.heading;
+  saveLoc({ name: document.getElementById('loc-name').value.trim() || 'Home', lat, lon, heading });
   locModal.classList.remove('open');
+  if (headingChanged) Sky.resetView();                       // glide to the new default direction
 };
 
 /* ---- Boot ---- */
