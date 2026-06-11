@@ -802,7 +802,7 @@
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
-          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, and a sun brightness slider.</span></div>
+          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
         </div>
       </div>
@@ -1312,7 +1312,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true,
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1531,9 +1531,11 @@ const Orrery = {
           for (const p of this.gravPatches) p.visible = v;
           if (v) this._gravT = null;                           // force a sheet rebuild now
         } },
+      { label: 'Milky Way', get: () => this.showMW, set: v => { this.showMW = v; this.mwGroup.visible = v; } },
     ]);
     this.addMagFields();
     this.addGravityGrid();
+    this.addMilkyWay();
 
     // Sun light dimmer
     const dimmer = document.createElement('div');
@@ -1649,6 +1651,22 @@ const Orrery = {
   },
 
   // Dipole field lines r = L·sin²θ — 8 meridian half-planes per shell, one
+  // Galaxy backdrop: the shared Milky Way point cloud on a distant sphere,
+  // rotated from the equatorial frame into the scene's ecliptic frame — the
+  // band crosses at its true 60° tilt, core fixed toward Sagittarius.
+  addMilkyWay() {
+    const { group } = makeMilkyWay(900);
+    const eps = 23.4393 * DEG, se = Math.sin(eps), ce = Math.cos(eps);
+    group.setRotationFromMatrix(new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(1, 0, 0),
+      new THREE.Vector3(0, -se, -ce),
+      new THREE.Vector3(0, ce, -se)
+    ));
+    group.visible = this.showMW;
+    this.mwGroup = group;
+    this.scene.add(group);
+  },
+
   // LineSegments per planet, parented to the planet so they ride its orbit.
   addMagFields() {
     this.magFields = [];
@@ -2006,6 +2024,63 @@ const eqToVec = (raRad, decRad, r) => new THREE.Vector3(
   r * Math.sin(decRad)
 );
 
+// Procedural Milky Way: ~10k faint additive points along the true galactic
+// plane (gal→eq J2000 rotation), denser & warmer toward the Sagittarius core,
+// with the Great Rift dust lane. Shared by Sky View and the orrery backdrop.
+function makeMilkyWay(R) {
+  const AT = [                                                // galactic → equatorial (J2000)
+    -0.0548755604, 0.4941094279, -0.8676661490,
+    -0.8734370902, -0.4448296300, -0.1980763734,
+    -0.4838350155, 0.7469822445, 0.4559837762,
+  ];
+  const group = new THREE.Group();
+  const mats = [];
+  let s = 12345;
+  const rnd = () => ((s = s * 16807 % 2147483647) / 2147483647);
+  const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * 1.75;
+  const bins = [
+    { size: 2.2, op: 0.26, pos: [], col: [] },
+    { size: 4.0, op: 0.16, pos: [], col: [] },
+    { size: 7.0, op: 0.09, pos: [], col: [] },
+  ];
+  const place = (l, b) => {
+    const lr = l * DEG, br = b * DEG;
+    const gx = Math.cos(br) * Math.cos(lr), gy = Math.cos(br) * Math.sin(lr), gz = Math.sin(br);
+    const x = AT[0] * gx + AT[1] * gy + AT[2] * gz;
+    const y = AT[3] * gx + AT[4] * gy + AT[5] * gz;
+    const z = AT[6] * gx + AT[7] * gy + AT[8] * gz;
+    const bin = bins[Math.floor(rnd() * 3)];
+    bin.pos.push(x * R, y * R, z * R);
+    const ln = ((l % 360) + 360) % 360;
+    const dc = Math.min(ln, 360 - ln);                        // angular distance from the core
+    const w = Math.exp(-dc * dc / (2 * 55 * 55));
+    bin.col.push(0.72 + 0.28 * w, 0.78 + 0.17 * w, 0.95 - 0.12 * w);
+  };
+  for (let i = 0; i < 14000; i++) {
+    const l = rnd() * 360;
+    const dc = Math.min(l, 360 - l);
+    if (rnd() > 0.30 + 0.70 * Math.exp(-dc * dc / (2 * 75 * 75))) continue;   // brighter toward Sgr
+    const sigma = 6.5 + 4.5 * Math.exp(-dc * dc / (2 * 50 * 50));
+    const b = gauss() * sigma;
+    if ((l < 65 || l > 350) && b > 0.5 && b < 5.5 && rnd() < 0.75) continue;  // Great Rift
+    place(l, b);
+  }
+  for (let i = 0; i < 1800; i++) place(gauss() * 16, gauss() * 9);            // central bulge
+  for (const bin of bins) {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(bin.pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(bin.col, 3));
+    const mat = new THREE.PointsMaterial({
+      size: bin.size, map: starSprite, vertexColors: true, transparent: true, opacity: bin.op,
+      blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false,
+    });
+    mat.userData.baseOpacity = bin.op;
+    mats.push(mat);
+    group.add(new THREE.Points(geo, mat));
+  }
+  return { group, mats };
+}
+
 const SKY_BODIES = {
   sun:     { color: 0xffd27d, size: 30, glow: true },
   moon:    { color: 0xe8ecf4, size: 22, glow: true },
@@ -2215,61 +2290,10 @@ const Sky = {
     this.loadCatalog();
   },
 
-  // Procedural Milky Way: ~10k faint additive points along the true galactic
-  // plane (gal→eq J2000 rotation), denser & warmer toward the Sagittarius core,
-  // with the Great Rift dust lane. Lands exactly right among the constellations.
   addMilkyWay() {
-    const AT = [                                              // galactic → equatorial (J2000)
-      -0.0548755604, 0.4941094279, -0.8676661490,
-      -0.8734370902, -0.4448296300, -0.1980763734,
-      -0.4838350155, 0.7469822445, 0.4559837762,
-    ];
-    this.mwGroup = new THREE.Group();
-    this._mwMats = [];
-    let s = 12345;
-    const rnd = () => ((s = s * 16807 % 2147483647) / 2147483647);
-    const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * 1.75;
-    const bins = [
-      { size: 2.2, op: 0.26, pos: [], col: [] },
-      { size: 4.0, op: 0.16, pos: [], col: [] },
-      { size: 7.0, op: 0.09, pos: [], col: [] },
-    ];
-    const place = (l, b) => {
-      const lr = l * DEG, br = b * DEG;
-      const gx = Math.cos(br) * Math.cos(lr), gy = Math.cos(br) * Math.sin(lr), gz = Math.sin(br);
-      const x = AT[0] * gx + AT[1] * gy + AT[2] * gz;
-      const y = AT[3] * gx + AT[4] * gy + AT[5] * gz;
-      const z = AT[6] * gx + AT[7] * gy + AT[8] * gz;
-      const bin = bins[Math.floor(rnd() * 3)];
-      const R = SKY_R * 0.99;
-      bin.pos.push(x * R, y * R, z * R);
-      const ln = ((l % 360) + 360) % 360;
-      const dc = Math.min(ln, 360 - ln);                      // angular distance from the core
-      const w = Math.exp(-dc * dc / (2 * 55 * 55));
-      bin.col.push(0.72 + 0.28 * w, 0.78 + 0.17 * w, 0.95 - 0.12 * w);
-    };
-    for (let i = 0; i < 14000; i++) {
-      const l = rnd() * 360;
-      const dc = Math.min(l, 360 - l);
-      if (rnd() > 0.30 + 0.70 * Math.exp(-dc * dc / (2 * 75 * 75))) continue;   // brighter toward Sgr
-      const sigma = 6.5 + 4.5 * Math.exp(-dc * dc / (2 * 50 * 50));
-      const b = gauss() * sigma;
-      if ((l < 65 || l > 350) && b > 0.5 && b < 5.5 && rnd() < 0.75) continue;  // Great Rift
-      place(l, b);
-    }
-    for (let i = 0; i < 1800; i++) place(gauss() * 16, gauss() * 9);            // central bulge
-    for (const bin of bins) {
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(bin.pos, 3));
-      geo.setAttribute('color', new THREE.Float32BufferAttribute(bin.col, 3));
-      const mat = new THREE.PointsMaterial({
-        size: bin.size, map: starSprite, vertexColors: true, transparent: true, opacity: bin.op,
-        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: false,
-      });
-      mat.userData.baseOpacity = bin.op;
-      this._mwMats.push(mat);
-      this.mwGroup.add(new THREE.Points(geo, mat));
-    }
+    const { group, mats } = makeMilkyWay(SKY_R * 0.99);
+    this.mwGroup = group;
+    this._mwMats = mats;
     this.mwGroup.visible = this.showMW;
     this.group.add(this.mwGroup);
   },
