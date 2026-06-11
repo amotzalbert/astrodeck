@@ -728,6 +728,34 @@ function glowTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,0)
 }
 const starSprite = glowTexture();
 
+/* ---------- Planet texture maps (CDN; colored spheres remain as fallback) ---------- */
+const TEX_THREE = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/planets/';
+const TEX_PLANETS = 'https://cdn.jsdelivr.net/gh/jeromeetienne/threex.planets@master/images/';
+const TEXTURES = {
+  sun: TEX_PLANETS + 'sunmap.jpg',
+  mercury: TEX_PLANETS + 'mercurymap.jpg',
+  venus: TEX_PLANETS + 'venusmap.jpg',
+  earth: TEX_THREE + 'earth_atmos_2048.jpg',
+  moon: TEX_THREE + 'moon_1024.jpg',
+  mars: TEX_PLANETS + 'marsmap1k.jpg',
+  jupiter: TEX_PLANETS + 'jupitermap.jpg',
+  saturn: TEX_PLANETS + 'saturnmap.jpg',
+  saturnRing: TEX_PLANETS + 'saturnringcolor.jpg',
+  uranus: TEX_PLANETS + 'uranusmap.jpg',
+  neptune: TEX_PLANETS + 'neptunemap.jpg',
+};
+const texLoader = new THREE.TextureLoader();
+texLoader.setCrossOrigin('anonymous');
+function applyTexture(mat, url) {
+  texLoader.load(url, tex => {
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    mat.map = tex;
+    mat.color.set(0xffffff);                                 // stop tinting once the real map is on
+    mat.needsUpdate = true;
+  });
+}
+
 function makeLabel(text, cls) {
   const el = document.createElement('div');
   el.className = 'obj-label ' + (cls || '');
@@ -811,6 +839,8 @@ const Orrery = {
       new THREE.SphereGeometry(2.6, 48, 48),
       new THREE.MeshBasicMaterial({ color: 0xffd27d })
     );
+    applyTexture(sun.material, TEXTURES.sun);
+    this.sunMesh = sun;
     const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
       map: glowTexture('rgba(255,200,90,0.9)', 'rgba(255,140,40,0)'),
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -835,33 +865,57 @@ const Orrery = {
         new THREE.MeshStandardMaterial({ color: meta.color, roughness: 0.7, metalness: 0.05 })
       );
       mesh.userData.body = name;
+      if (TEXTURES[name]) applyTexture(mesh.material, TEXTURES[name]);
+      let node = mesh;                                       // what gets positioned in the scene
       if (name === 'saturn') {
-        const ring = new THREE.Mesh(
-          new THREE.RingGeometry(meta.size * 1.45, meta.size * 2.3, 64),
-          new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 0.55 })
-        );
+        const ringGeo = new THREE.RingGeometry(meta.size * 1.45, meta.size * 2.3, 96);
+        // remap UVs radially so the ring texture strip reads inner→outer
+        const rp = ringGeo.attributes.position, ruv = ringGeo.attributes.uv, v3 = new THREE.Vector3();
+        for (let k = 0; k < rp.count; k++) {
+          v3.fromBufferAttribute(rp, k);
+          ruv.setXY(k, (v3.length() - meta.size * 1.45) / (meta.size * 0.85), 0.5);
+        }
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+        applyTexture(ringMat, TEXTURES.saturnRing);
+        const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = Math.PI / 2 - 0.45;
         mesh.add(ring);
       }
       if (name === 'earth') {
+        node = new THREE.Group();                            // body spins inside; moon/halo/label don't
+        node.add(mesh);
+        const dot = new THREE.Mesh(
+          new THREE.SphereGeometry(0.05, 16, 16),
+          new THREE.MeshBasicMaterial({ color: 0xff3b30 })
+        );
+        const dotGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: glowTexture('rgba(255,80,60,0.9)', 'rgba(255,60,40,0)'),
+          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        }));
+        dotGlow.scale.setScalar(0.45);
+        dot.add(dotGlow);
+        this.homeDot = dot;
+        mesh.add(dot);                                       // rides on the spinning globe
+        this.earthSpin = mesh;
         const moon = new THREE.Mesh(
           new THREE.SphereGeometry(0.16, 24, 24),
           new THREE.MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.9 })
         );
+        applyTexture(moon.material, TEXTURES.moon);
         moon.userData.isMoon = true;
-        mesh.add(moon);
+        node.add(moon);
         const halo = new THREE.Sprite(new THREE.SpriteMaterial({
           map: glowTexture('rgba(94,234,212,0.5)', 'rgba(94,234,212,0)'),
           transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
         }));
         halo.scale.setScalar(2.6);
-        mesh.add(halo);
+        node.add(halo);
       }
       const label = makeLabel(name[0].toUpperCase() + name.slice(1), 'planet');
-      mesh.add(label);
-      mesh.userData.label = label;
-      this.scene.add(mesh);
-      this.meshes[name] = mesh;
+      node.add(label);
+      node.userData.label = label;
+      this.scene.add(node);
+      this.meshes[name] = node;
       this.clickables.push(mesh);
 
       // Orbit path sampled over one period
@@ -910,6 +964,26 @@ const Orrery = {
     ]);
   },
 
+  // Orient the textured globe so Greenwich faces RA = GMST (true rotation +
+  // 23.4° axial tilt), then pin the home marker at the saved lat/lon.
+  orientEarth(d) {
+    const eps = obliquity(d);
+    const gmst = lstRad(Sim.jd, 0);
+    // Equatorial basis expressed in scene coords (scene = ecliptic, y-up)
+    const E1 = new THREE.Vector3(1, 0, 0);                              // vernal equinox
+    const E2 = new THREE.Vector3(0, -Math.sin(eps), -Math.cos(eps));    // RA 90°
+    const E3 = new THREE.Vector3(0, Math.cos(eps), -Math.sin(eps));     // north celestial pole
+    const X = E1.clone().multiplyScalar(Math.cos(gmst)).addScaledVector(E2, Math.sin(gmst));
+    const Z = new THREE.Vector3().crossVectors(X, E3);
+    this.earthSpin.setRotationFromMatrix(new THREE.Matrix4().makeBasis(X, E3, Z));
+    const phi = Loc.lat * DEG, lam = Loc.lon * DEG, R = PLANET_META.earth.size;
+    this.homeDot.position.set(
+      R * Math.cos(phi) * Math.cos(lam),
+      R * Math.sin(phi),
+      -R * Math.cos(phi) * Math.sin(lam)
+    );
+  },
+
   highlightOrbit(name) {
     for (const [n, o] of Object.entries(this.orbits)) {
       const sel = n === name;
@@ -927,8 +1001,10 @@ const Orrery = {
         ? (() => { const s = sunGeo(d); return { x: -s.x, y: -s.y, z: -s.z }; })()
         : helio(name, d);
       this.meshes[name].position.copy(eclToScene(p));
-      this.meshes[name].rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, earth: 1, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
+      if (name === 'earth') this.orientEarth(d);
+      else this.meshes[name].rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
     }
+    this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
     // Moon around Earth (exaggerated)
     const moonMesh = this.meshes.earth.children.find(c => c.userData.isMoon);
     if (moonMesh) {
@@ -1508,6 +1584,8 @@ refreshSpeedUI();
     `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
 window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
+
+window.__astro = { Orrery, Sky, Sim, get Loc() { return Loc; } };   // console/debug access
 
 function loop(now) {
   Sim.tick();
