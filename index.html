@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/satellite.js@5/dist/satellite.min.js"></script>
 <script type="importmap">
 {
   "imports": {
@@ -965,6 +966,35 @@ const MOONS = {
   triton:    { planet: 'neptune', size: 0.10,  color: 0xcfd5d9, el: [222.772, 129.1292, 219.4035, 2.371475e-3, 2.8e-5, 332.7778, 61.2545456],
                dia: '2,707 km', fact: 'Orbits backwards — almost certainly a captured Kuiper Belt object, with nitrogen geysers.' },
 };
+/* ---- ISS: real SGP4 propagation from today's TLE ---- */
+let issSatrec = null, issReady = false;
+async function initISS() {
+  if (typeof satellite === 'undefined') { console.warn('satellite.js not loaded — ISS disabled'); return; }
+  try {
+    let l1, l2;
+    try {
+      const j = await (await fetch('https://api.wheretheiss.at/v1/satellites/25544/tles')).json();
+      l1 = j.line1; l2 = j.line2;
+    } catch {
+      const txt = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?CATNR=25544&FORMAT=TLE')).text();
+      const lines = txt.trim().split('\n');
+      l1 = lines[1].trim(); l2 = lines[2].trim();
+    }
+    issSatrec = satellite.twoline2satrec(l1, l2);
+    issReady = true;
+    Orrery.addISS();
+    Sky.addISS();
+  } catch (err) { console.warn('ISS data unavailable', err); }
+}
+// TEME position/velocity (km) at a date — null when TLE can't be trusted
+function issState(date) {
+  if (!issReady) return null;
+  if (Math.abs(date.getTime() - Date.now()) > 45 * 86400000) return null;  // TLE too stale that far out
+  const pv = satellite.propagate(issSatrec, date);
+  if (!pv || !pv.position || !isFinite(pv.position.x)) return null;
+  return pv;
+}
+
 // Stylized display radius per system: real spacing ratios, compressed to sit near the planet
 {
   const byPlanet = {};
@@ -1179,7 +1209,7 @@ const Orrery = {
         const body = hits[0].object.userData.body;
         showBodyInfo(body, 'orrery-info', () => { this.highlightOrbit(null); this.setFocus(null); });
         this.highlightOrbit(this.orbits[body] ? body : null);
-        this.setFocus(this.meshes[body] || MOONS[body] || body === 'moon' ? body : null);  // sun → heliocentric
+        this.setFocus(this.meshes[body] || MOONS[body] || body === 'moon' || body === 'iss' ? body : null);  // sun → heliocentric
       } else {
         document.getElementById('orrery-info').classList.remove('open');
         this.highlightOrbit(null);
@@ -1208,6 +1238,67 @@ const Orrery = {
     document.getElementById('orrery-toggles').appendChild(dimmer);
   },
 
+  // ISS: dot + real inclined orbit ring around Earth (altitude exaggerated to be visible)
+  addISS() {
+    const node = this.meshes.earth;
+    const dot = new THREE.Mesh(
+      new THREE.SphereGeometry(0.035, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xb0fbff })
+    );
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture('rgba(140,250,255,0.9)', 'rgba(140,250,255,0)'),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    glow.scale.setScalar(0.26);
+    dot.add(glow);
+    const label = makeLabel('ISS', 'moon-label');
+    label.visible = false;
+    dot.add(label);
+    dot.userData.label = label;
+    dot.userData.body = 'iss';
+    node.add(dot);
+    this.issDot = dot;
+    this.clickables.push(dot);
+    const orbitGeo = new THREE.BufferGeometry();
+    orbitGeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(129 * 3), 3));
+    this.issOrbit = new THREE.Line(orbitGeo,
+      new THREE.LineBasicMaterial({ color: 0x8cfaff, transparent: true, opacity: 0.5 }));
+    this.issOrbit.userData.isOrbit = true;
+    this.issOrbit.visible = this.showOrbits;
+    node.add(this.issOrbit);
+  },
+
+  // TEME equatorial xyz → scene-frame (ecliptic, y-up) direction
+  _eciToScene(p, eps, out) {
+    const se = Math.sin(eps), ce = Math.cos(eps);
+    return out.set(p.x, -p.y * se + p.z * ce, -p.y * ce - p.z * se);
+  },
+
+  updateISS(d) {
+    if (!this.issDot) return;
+    const pv = issState(Sim.date);
+    this.issDot.visible = !!pv;
+    this.issOrbit.visible = !!pv && this.showOrbits;
+    if (!pv) return;
+    const eps = obliquity(d);
+    const disp = PLANET_META.earth.size * 1.38;
+    this._eciToScene(pv.position, eps, _tmpV).normalize().multiplyScalar(disp);
+    this.issDot.position.copy(_tmpV);
+    if (this._issOrbitT == null || Math.abs(Sim.ms - this._issOrbitT) > 5 * 60000) {
+      this._issOrbitT = Sim.ms;
+      const attr = this.issOrbit.geometry.attributes.position;
+      const periodMs = (2 * Math.PI / issSatrec.no) * 60000;  // satrec.no = rad/min
+      for (let k = 0; k <= 128; k++) {
+        const pv2 = issState(new Date(Sim.ms + (k / 128 - 0.5) * periodMs));
+        if (pv2) {
+          this._eciToScene(pv2.position, eps, _tmpV).normalize().multiplyScalar(disp);
+          attr.setXYZ(k, _tmpV.x, _tmpV.y, _tmpV.z);
+        }
+      }
+      attr.needsUpdate = true;
+    }
+  },
+
   // Camera focus: null = Sun (origin); a planet/moon name = glide to it and ride along
   setFocus(body) {
     this.focusBody = body;
@@ -1219,12 +1310,14 @@ const Orrery = {
       this.moonMeshes[mname].userData.label.visible = mdef.planet === system;
     }
     if (this.earthMoonLabel) this.earthMoonLabel.visible = system === 'earth';
+    if (this.issDot) this.issDot.userData.label.visible = system === 'earth';
   },
 
   // World-space position of the current focus target (moons are nested in groups)
   _focusPos(out) {
     if (!this.focusBody) return out.copy(ORIGIN);
     const moonMesh = this.moonMeshes[this.focusBody]
+      || (this.focusBody === 'iss' ? this.issDot : null)
       || (this.focusBody === 'moon' ? this.meshes.earth.children.find(c => c.userData.isMoon) : null);
     if (moonMesh) return moonMesh.getWorldPosition(out);
     return out.copy(this.meshes[this.focusBody].position);
@@ -1271,6 +1364,7 @@ const Orrery = {
       else (this.spinMeshes[name] || this.meshes[name]).rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
     }
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
+    this.updateISS(d);
     // Moons: real Kepler propagation, true direction, display-scaled radius
     for (const [mname, mdef] of Object.entries(MOONS)) {
       const el = mdef.el;
@@ -1318,6 +1412,22 @@ function showBodyInfo(body, cardId, onClose) {
     rows = row('Distance from Earth', (s.r * AU_KM / 1e6).toFixed(1) + ' M km')
          + row('Diameter', '1,392,700 km') + row('Surface temp', '5,505 °C');
     fact = 'The Sun holds 99.86% of the mass of the entire solar system.';
+  } else if (body === 'iss') {
+    title = 'ISS'; kind = 'International Space Station';
+    const pv = issState(Sim.date);
+    if (pv) {
+      const gmst = satellite.gstime(Sim.date);
+      const gd = satellite.eciToGeodetic(pv.position, gmst);
+      const vel = Math.hypot(pv.velocity.x, pv.velocity.y, pv.velocity.z);
+      rows = row('Altitude', Math.round(gd.height) + ' km')
+           + row('Speed', vel.toFixed(2) + ' km/s')
+           + row('Currently above', `${(gd.latitude / DEG).toFixed(1)}°, ${(gd.longitude / DEG).toFixed(1)}°`)
+           + row('Orbital period', ((2 * Math.PI / issSatrec.no) / 60).toFixed(1) + ' min')
+           + row('Crewed', 'continuously since Nov 2000');
+    } else {
+      rows = row('Position', 'unavailable for this date');
+    }
+    fact = 'The largest structure humanity has placed in space, the size of a football field — position computed live from today’s orbital elements (SGP4).';
   } else if (MOONS[body]) {
     const m = MOONS[body];
     title = body[0].toUpperCase() + body.slice(1);
@@ -1713,9 +1823,45 @@ const Sky = {
 
   // World-space alt/az of a body sprite (group rotation applied)
   _bodyAltAz(name) {
+    if (name === 'iss') return this._issAltAz || { alt: -1, az: 0 };
     _tmpV.copy(this.bodySprites[name].position).applyQuaternion(this.group.quaternion);
     const r = _tmpV.length();
     return { alt: Math.asin(_tmpV.y / r), az: Math.atan2(_tmpV.x, -_tmpV.z) };
+  },
+
+  // ISS sprite lives in the fixed horizon frame (not the rotating star sphere)
+  addISS() {
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: starSprite, color: 0xb0fbff, transparent: true, depthWrite: false,
+    }));
+    sprite.scale.setScalar(9);
+    sprite.add(makeLabel('ISS', 'planet'));
+    sprite.visible = false;
+    this.scene.add(sprite);
+    this.issSprite = sprite;
+    const opt = document.createElement('option');
+    opt.value = 'iss';
+    opt.textContent = 'ISS';
+    this._focusSel.appendChild(opt);
+  },
+
+  updateISS() {
+    if (!this.issSprite) return;
+    const pv = issState(Sim.date);
+    if (!pv) { this.issSprite.visible = false; this._issAltAz = null; return; }
+    const gmst = satellite.gstime(Sim.date);
+    const ecf = satellite.eciToEcf(pv.position, gmst);
+    const la = satellite.ecfToLookAngles(
+      { latitude: Loc.lat * DEG, longitude: Loc.lon * DEG, height: 0.5 }, ecf);
+    this._issAltAz = { alt: la.elevation, az: la.azimuth };
+    const r = SKY_R * 0.9, ca = Math.cos(la.elevation);
+    this.issSprite.position.set(
+      Math.sin(la.azimuth) * ca * r,
+      Math.sin(la.elevation) * r,
+      -Math.cos(la.azimuth) * ca * r
+    );
+    this.issSprite.visible = la.elevation > -0.03;           // pops up right at the horizon
+    this.issSprite.material.opacity = la.elevation > 0 ? 1 : 0.4;
   },
 
   update() {
@@ -1764,6 +1910,8 @@ const Sky = {
         this.bodySprites[name].position.copy(eqToVec(eq.ra, eq.dec, SKY_R * 0.97));
       }
     }
+
+    this.updateISS();
 
     // Atmosphere tint + star fading by sun altitude
     const alt = this.atmosphere ? sunAltitude(jd, Loc.lat, Loc.lon) : -90;
@@ -1816,7 +1964,7 @@ const Sky = {
         for (const opt of this._focusSel.options) {
           if (!opt.value) continue;
           const a = this._bodyAltAz(opt.value);
-          const base = opt.value === 'sun' ? 'Sun' : opt.value === 'moon' ? 'Moon' : opt.value[0].toUpperCase() + opt.value.slice(1);
+          const base = opt.value === 'sun' ? 'Sun' : opt.value === 'moon' ? 'Moon' : opt.value === 'iss' ? 'ISS' : opt.value[0].toUpperCase() + opt.value.slice(1);
           opt.textContent = `${base} ${a.alt >= 0 ? '↑' : '↓'} ${Math.round(a.alt / DEG)}°`;
         }
       }
@@ -2147,6 +2295,7 @@ refreshLocChip();
 buildFeeds();
 Orrery.init();
 Sky.init();
+initISS();
 makeStackCollapsible('orrery-toggles');
 makeStackCollapsible('sky-toggles');
 updateTimeBarUI();
