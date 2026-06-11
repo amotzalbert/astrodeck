@@ -402,6 +402,84 @@
   .modal .actions .text-btn { flex: 1; padding: 10px; }
   .geo-status { font-family: var(--mono); font-size: 10.5px; color: var(--warn); margin-top: 8px; min-height: 14px; }
 
+  /* ---------- Help modal ---------- */
+  #help-btn {
+    position: fixed; top: 14px; right: 16px; z-index: 55;
+    appearance: none; cursor: pointer;
+    width: 30px; height: 30px;
+    display: grid; place-items: center;
+    background: rgba(13,19,36,0.85);
+    border: 1px solid var(--border-soft);
+    border-radius: 50%;
+    color: var(--text-dim);
+    font-size: 14px; font-weight: 600; font-family: var(--mono);
+    transition: all .15s;
+    backdrop-filter: blur(10px);
+  }
+  #help-btn:hover { border-color: rgba(94,234,212,0.5); color: var(--accent); box-shadow: 0 0 10px rgba(94,234,212,0.2); }
+  .help-modal {
+    width: 560px; max-width: calc(100vw - 32px);
+    max-height: calc(100vh - 60px);
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.8), var(--glow);
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .help-modal-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 22px 16px;
+    border-bottom: 1px solid var(--border-soft);
+    flex-shrink: 0;
+  }
+  .help-modal-head h2 {
+    font-size: 13px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .help-close {
+    appearance: none; cursor: pointer;
+    width: 30px; height: 30px;
+    display: grid; place-items: center;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px; color: var(--text-dim); font-size: 16px;
+    transition: all .15s;
+  }
+  .help-close:hover { color: var(--text); border-color: rgba(248,113,113,0.4); }
+  .help-body {
+    overflow-y: auto; padding: 18px 22px 24px;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+  .help-section { border-bottom: 1px solid rgba(255,255,255,0.06); padding-bottom: 18px; }
+  .help-section:last-child { border-bottom: none; padding-bottom: 0; }
+  .help-section h3 {
+    font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--accent-2); margin-bottom: 12px;
+  }
+  .help-rows { display: flex; flex-direction: column; gap: 8px; }
+  .help-row {
+    display: flex; gap: 10px; align-items: flex-start;
+    font-size: 12.5px; line-height: 1.55; color: var(--text-dim);
+  }
+  .help-row .icon { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; margin-top: 1px; }
+  .help-row strong { color: var(--text); font-weight: 600; }
+  kbd {
+    display: inline-block;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.18);
+    border-bottom-width: 2px;
+    border-radius: 5px;
+    font-family: var(--mono); font-size: 10.5px;
+    padding: 1px 5px; color: var(--text); vertical-align: middle;
+    line-height: 1.6;
+  }
+  .help-hint {
+    font-size: 10.5px; font-family: var(--mono); letter-spacing: 0.5px;
+    color: var(--text-dim); margin-top: 4px; line-height: 1.5;
+  }
+
   /* ---------- Feeds view ---------- */
   #view-feeds { overflow-y: auto; padding: 24px; }
   .feeds-wrap { max-width: 1100px; margin: 0 auto; }
@@ -586,6 +664,7 @@
     <span id="clock-label">—</span>
   </div>
 </header>
+<button id="help-btn" title="Help &amp; feature guide">?</button>
 
 <main>
   <!-- ============ ORRERY VIEW ============ -->
@@ -692,6 +771,81 @@
     <div class="actions">
       <button class="text-btn" id="loc-geo">📡 Use my location</button>
       <button class="text-btn primary" id="loc-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ HELP MODAL ============ -->
+<div class="modal-backdrop" id="help-modal">
+  <div class="help-modal">
+    <div class="help-modal-head">
+      <h2>AstroDeck — Feature Guide</h2>
+      <button class="help-close" id="help-close">✕</button>
+    </div>
+    <div class="help-body">
+
+      <div class="help-section">
+        <h3>🚀 Getting Started</h3>
+        <div class="help-rows">
+          <div class="help-row"><span class="icon">📍</span><span>Click the <strong>location chip</strong> (top right) to set your city, lat/lon, and default viewing direction. The sky is rendered exactly as seen from that point on Earth.</span></div>
+          <div class="help-row"><span class="icon">🌍</span><span>Three views: <strong>Solar System</strong> (3D orrery), <strong>Sky View</strong> (planetarium), <strong>Telescope Feeds</strong> (live imagery).</span></div>
+          <div class="help-row"><span class="icon">⏱</span><span>The <strong>time bar</strong> at the bottom controls the simulation clock — pause, speed up, reverse, or jump to any date to see the sky in the past or future.</span></div>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <h3>🪐 Solar System (3D Orrery)</h3>
+        <div class="help-rows">
+          <div class="help-row"><span class="icon">🖱</span><span><kbd>Drag</kbd> to orbit the view · <kbd>Scroll</kbd> to zoom · <kbd>Right-drag</kbd> to pan.</span></div>
+          <div class="help-row"><span class="icon">🔭</span><span><strong>Click any body</strong> — planet, moon, or ISS — to focus the camera on it and see a live info card with distances, orbital data, and facts. The camera rides along as it moves.</span></div>
+          <div class="help-row"><span class="icon">🛸</span><span>The <strong>ISS</strong> is a live 3D model: SGP4-propagated from today's TLE. Its solar arrays track the Sun in real time. Click it for ground track and pass info.</span></div>
+          <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
+          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, and a sun brightness slider.</span></div>
+          <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <h3>🌌 Sky View (Planetarium)</h3>
+        <div class="help-rows">
+          <div class="help-row"><span class="icon">🖱</span><span><kbd>Drag</kbd> to look around the sky · <kbd>Scroll</kbd> to zoom in/out.</span></div>
+          <div class="help-row"><span class="icon">🎯</span><span><strong>Focus on…</strong> dropdown — pick any planet, Moon, or ISS and the view glides to track it. Live altitude ↑↓ markers show what's above/below the horizon.</span></div>
+          <div class="help-row"><span class="icon">✨</span><span><strong>Tonight</strong> panel — scans the coming dark window and lists every naked-eye planet + Moon: visible hours, peak altitude, compass direction. Tap any row to track it.</span></div>
+          <div class="help-row"><span class="icon">🛰️</span><span><strong>ISS pass alert</strong> — a banner appears only on nights with a genuinely visible pass (station &gt;10°, sky dark, station sunlit). "Show me" jumps to the pass and tracks it.</span></div>
+          <div class="help-row"><span class="icon">🧭</span><span>Live <strong>compass</strong> (bottom-left) shows your heading. Click it to snap back to North.</span></div>
+          <div class="help-row"><span class="icon">↺</span><span><strong>Reset View</strong> returns to your saved default direction and 28° altitude. Useful after manual panning.</span></div>
+          <div class="help-row"><span class="icon">🌅</span><span><strong>Atmosphere</strong> toggle adds day/twilight sky tinting and fades stars near the horizon. Off by default for pure star-gazing.</span></div>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <h3>📱 Mobile</h3>
+        <div class="help-rows">
+          <div class="help-row"><span class="icon">🔭</span><span><strong>Gyro / AR mode</strong> — tap the <kbd>Gyro</kbd> pill (iOS: grant motion permission when prompted), then hold your phone up and aim at the sky. The view follows where your phone points, compass-referenced.</span></div>
+          <div class="help-row"><span class="icon">🤏</span><span><strong>Pinch to zoom</strong> in Sky View and the Orrery.</span></div>
+          <div class="help-row"><span class="icon">☰</span><span><strong>☰ Controls</strong> pill collapses the right-side toggle stack — tap to show/hide.</span></div>
+          <div class="help-row"><span class="icon">⏱</span><span>Tap the <strong>⏱</strong> chip at the bottom to show the time bar; tap again to fold it away for a full-screen view.</span></div>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <h3>📍 Location &amp; Settings</h3>
+        <div class="help-rows">
+          <div class="help-row"><span class="icon">✏️</span><span>Click the <strong>location chip</strong> (city name, top right) to open the location dialog. Enter coordinates manually or tap <kbd>📡 Use my location</kbd> to pull GPS.</span></div>
+          <div class="help-row"><span class="icon">🧭</span><span><strong>Facing</strong> sets the default Sky View direction when you open the app or hit Reset View — N, NE, E … NW.</span></div>
+          <div class="help-row"><span class="icon">💾</span><span>All settings are saved locally in your browser — no account needed.</span></div>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <h3>🎯 Data Accuracy</h3>
+        <div class="help-rows">
+          <div class="help-row"><span class="icon">🌍</span><span><strong>Planets</strong>: Schlyter Keplerian elements (arcminute-level). <strong>Moon</strong>: full perturbation series, ~0.02° vs JPL Horizons. <strong>12 moons</strong>: JPL Horizons osculating elements. <strong>ISS</strong>: daily TLE + SGP4 propagation.</span></div>
+          <div class="help-row"><span class="icon">📡</span><span>TLE fetched from <em>wheretheiss.at</em> on load with Celestrak as fallback. Refresh the page to pull the latest TLE for best ISS accuracy.</span></div>
+        </div>
+        <p class="help-hint">Star catalog: d3-celestial (BSD) · Textures: three.js / threex.planets · Ephemerides: NASA JPL Horizons</p>
+      </div>
+
     </div>
   </div>
 </div>
@@ -2426,6 +2580,12 @@ document.getElementById('loc-save').onclick = () => {
   locModal.classList.remove('open');
   if (headingChanged) Sky.resetView();                       // glide to the new default direction
 };
+
+/* ---- Help modal ---- */
+const helpModal = document.getElementById('help-modal');
+document.getElementById('help-btn').onclick = () => helpModal.classList.add('open');
+document.getElementById('help-close').onclick = () => helpModal.classList.remove('open');
+helpModal.addEventListener('click', e => { if (e.target === helpModal) helpModal.classList.remove('open'); });
 
 /* ---- Boot ---- */
 refreshLocChip();
