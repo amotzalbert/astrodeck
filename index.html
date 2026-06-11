@@ -1340,18 +1340,52 @@ const Orrery = {
     document.getElementById('orrery-toggles').appendChild(dimmer);
   },
 
-  // ISS: dot + real inclined orbit ring around Earth (altitude exaggerated to be visible)
+  // Low-poly ISS: truss + module stack + 8 solar wings + radiators (+Z faces the Sun)
+  _buildISSModel() {
+    const g = new THREE.Group();
+    const trussMat = new THREE.MeshStandardMaterial({ color: 0xb8bec8, roughness: 0.6, metalness: 0.45 });
+    const moduleMat = new THREE.MeshStandardMaterial({ color: 0xe6e8ec, roughness: 0.4, metalness: 0.25 });
+    const panelMat = new THREE.MeshStandardMaterial({
+      color: 0xb9842f, roughness: 0.5, metalness: 0.4,
+      emissive: 0x2e1f08, side: THREE.DoubleSide,
+    });
+    const radMat = new THREE.MeshStandardMaterial({ color: 0xd6dde4, roughness: 0.75, side: THREE.DoubleSide });
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.175, 0.006, 0.006), trussMat));   // main truss
+    for (const [y, len, r] of [[0.012, 0.055, 0.011], [0.052, 0.022, 0.009], [-0.038, 0.062, 0.012], [-0.078, 0.02, 0.014]]) {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 12), moduleMat);
+      m.position.y = y;
+      g.add(m);                                                                    // pressurized modules
+    }
+    for (const x of [-0.087, -0.06, 0.06, 0.087]) {
+      for (const s of [1, -1]) {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.054, 0.0015), panelMat);
+        p.position.set(x, s * 0.042, 0);
+        g.add(p);                                                                  // solar array wings
+      }
+    }
+    for (const x of [-0.024, 0.024]) {
+      const r = new THREE.Mesh(new THREE.BoxGeometry(0.017, 0.036, 0.001), radMat);
+      r.position.set(x, -0.032, 0.014);
+      r.rotation.x = 0.55;
+      g.add(r);                                                                    // thermal radiators
+    }
+    return g;
+  },
+
+  // ISS: 3D model + real inclined orbit ring around Earth (altitude exaggerated to be visible)
   addISS() {
     const node = this.meshes.earth;
-    const dot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.035, 12, 12),
-      new THREE.MeshBasicMaterial({ color: 0xb0fbff })
+    const dot = new THREE.Mesh(                              // invisible, generous click target
+      new THREE.SphereGeometry(0.1, 8, 8),
+      new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
     );
+    this.issModel = this._buildISSModel();
+    dot.add(this.issModel);
     const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTexture('rgba(140,250,255,0.9)', 'rgba(140,250,255,0)'),
+      map: glowTexture('rgba(140,250,255,0.7)', 'rgba(140,250,255,0)'),
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
     }));
-    glow.scale.setScalar(0.26);
+    glow.scale.setScalar(0.16);
     dot.add(glow);
     const label = makeLabel('ISS', 'moon-label');
     label.visible = false;
@@ -1386,6 +1420,7 @@ const Orrery = {
     const disp = PLANET_META.earth.size * 1.38;
     this._eciToScene(pv.position, eps, _tmpV).normalize().multiplyScalar(disp);
     this.issDot.position.copy(_tmpV);
+    this.issModel.lookAt(ORIGIN);                            // solar arrays track the Sun
     if (this._issOrbitT == null || Math.abs(Sim.ms - this._issOrbitT) > 5 * 60000) {
       this._issOrbitT = Sim.ms;
       const attr = this.issOrbit.geometry.attributes.position;
