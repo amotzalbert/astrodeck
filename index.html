@@ -150,7 +150,24 @@
     flex-wrap: wrap; justify-content: center;
     max-width: calc(100vw - 24px);
   }
+  .ctrl-bar { transition: transform .35s ease, opacity .3s ease; }
+  .ctrl-bar.collapsed { transform: translate(-50%, 150%); opacity: 0; pointer-events: none; }
   .ctrl-bar .group { display: flex; align-items: center; gap: 6px; }
+  .time-restore {
+    position: fixed; bottom: 14px; left: 50%; transform: translateX(-50%);
+    display: none; align-items: center; gap: 8px;
+    background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--border); border-radius: 999px;
+    color: var(--accent); font-family: var(--mono); font-size: 11px;
+    padding: 8px 16px; cursor: pointer; z-index: 19;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .time-restore.show { display: flex; }
+  .stack-toggle { display: none; }
+  @media (max-width: 760px) {
+    .stack-toggle { display: flex; }
+    .toggle-stack.folded > *:not(.stack-toggle) { display: none; }
+  }
   .ctrl-bar .sep { width: 1px; height: 22px; background: var(--border-soft); }
   .icon-btn {
     appearance: none; cursor: pointer;
@@ -600,7 +617,10 @@
     <button class="text-btn" id="t-set">Go</button>
     <button class="text-btn primary" id="t-now">Now</button>
   </div>
+  <div class="sep"></div>
+  <button class="icon-btn" id="t-fold" title="Hide time controls">▾</button>
 </div>
+<button class="time-restore" id="t-restore" title="Show time controls">⏱ <span id="t-restore-time"></span></button>
 
 <!-- ============ LOCATION MODAL ============ -->
 <div class="modal-backdrop" id="loc-modal">
@@ -1917,10 +1937,33 @@ document.getElementById('tabs').addEventListener('click', e => {
   activeView = btn.dataset.view;
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b === btn));
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + activeView));
-  document.getElementById('time-bar').style.display = activeView === 'feeds' ? 'none' : 'flex';
+  updateTimeBarUI();
   if (activeView === 'orrery') Orrery.resize();
   if (activeView === 'sky') Sky.resize();
 });
+
+/* ---- Collapsible chrome: time bar fold + control stacks (mobile) ---- */
+const timeBarEl = document.getElementById('time-bar');
+const tRestoreEl = document.getElementById('t-restore');
+let timeBarFolded = matchMedia('(max-width: 760px)').matches;  // start clean on phones
+function updateTimeBarUI() {
+  const onCanvasView = activeView !== 'feeds';
+  timeBarEl.style.display = onCanvasView ? 'flex' : 'none';
+  timeBarEl.classList.toggle('collapsed', timeBarFolded);
+  tRestoreEl.classList.toggle('show', onCanvasView && timeBarFolded);
+}
+document.getElementById('t-fold').onclick = () => { timeBarFolded = true; updateTimeBarUI(); };
+tRestoreEl.onclick = () => { timeBarFolded = false; updateTimeBarUI(); };
+
+function makeStackCollapsible(hostId) {
+  const host = document.getElementById(hostId);
+  const btn = document.createElement('button');
+  btn.className = 'toggle-pill stack-toggle';
+  btn.innerHTML = `<span style="font-size:13px;line-height:0">☰</span>Controls`;
+  btn.onclick = () => host.classList.toggle('folded');
+  host.prepend(btn);
+  host.classList.add('folded');                              // CSS applies this on mobile only
+}
 
 /* ---- Time controls ---- */
 const speedEl = document.getElementById('t-speed');
@@ -1955,6 +1998,8 @@ function updateClocks(now) {
   lastClockUpdate = now;
   const sim = Sim.date;
   document.getElementById('t-clock').innerHTML = `<span class="dim">SIM</span> ${fmtSim(sim)}`;
+  document.getElementById('t-restore-time').textContent =
+    `${pad(sim.getHours())}:${pad(sim.getMinutes())}${Sim.paused ? ' ⏸' : ''}`;
   const lst = lstRad(Sim.jd, Loc.lon) / DEG / 15;
   const lh = Math.floor(lst), lm = Math.floor((lst - lh) * 60);
   document.getElementById('clock-label').innerHTML =
@@ -2007,6 +2052,9 @@ refreshLocChip();
 buildFeeds();
 Orrery.init();
 Sky.init();
+makeStackCollapsible('orrery-toggles');
+makeStackCollapsible('sky-toggles');
+updateTimeBarUI();
 refreshSpeedUI();
 {
   const dt = new Date();
