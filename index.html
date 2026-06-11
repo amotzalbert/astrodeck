@@ -130,6 +130,7 @@
   }
   .obj-label.planet { color: #7ef5e2; }
   .obj-label.star-name { color: rgba(253, 211, 92, 0.95); font-size: 9.5px; }
+  .obj-label.moon-label { color: rgba(203, 213, 225, 0.9); font-size: 8.5px; padding-left: 7px; }
   .obj-label.const-name {
     color: rgba(196, 167, 255, 0.92); font-size: 10px; letter-spacing: 2.5px;
     font-weight: 600;
@@ -647,9 +648,21 @@ function moonGeo(d) {
        + 0.658 * Math.sin(2 * D * DEG)                       // variation
        - 0.186 * Math.sin(Ms * DEG)                          // yearly equation
        - 0.059 * Math.sin((2 * Mm - 2 * D) * DEG)
-       - 0.057 * Math.sin((Mm - 2 * D + Ms) * DEG);
-  lat += -0.173 * Math.sin((F - 2 * D) * DEG);
-  const rAU = p.r * 4.26352e-5;                              // Earth radii → AU
+       - 0.057 * Math.sin((Mm - 2 * D + Ms) * DEG)
+       + 0.053 * Math.sin((Mm + 2 * D) * DEG)
+       + 0.046 * Math.sin((2 * D - Ms) * DEG)
+       + 0.041 * Math.sin((Mm - Ms) * DEG)
+       - 0.035 * Math.sin(D * DEG)                           // parallactic equation
+       - 0.031 * Math.sin((Mm + Ms) * DEG)
+       - 0.015 * Math.sin((2 * F - 2 * D) * DEG)
+       + 0.011 * Math.sin((Mm - 4 * D) * DEG);
+  lat += -0.173 * Math.sin((F - 2 * D) * DEG)
+       - 0.055 * Math.sin((Mm - F - 2 * D) * DEG)
+       - 0.046 * Math.sin((Mm + F - 2 * D) * DEG)
+       + 0.033 * Math.sin((F + 2 * D) * DEG)
+       + 0.017 * Math.sin((2 * Mm + F) * DEG);
+  const rER = p.r - 0.58 * Math.cos((Mm - 2 * D) * DEG) - 0.46 * Math.cos(2 * D * DEG);
+  const rAU = rER * 4.26352e-5;                              // Earth radii → AU
   return {
     x: rAU * Math.cos(lon * DEG) * Math.cos(lat * DEG),
     y: rAU * Math.sin(lon * DEG) * Math.cos(lat * DEG),
@@ -806,6 +819,48 @@ const PLANET_META = {
   neptune: { color: 0x5a7de0, size: 0.9,  kind: 'Ice giant',     diameter: '49,244 km', day: '16.1 hours',      year: '165 years',  fact: 'Neptune was found with mathematics before telescopes: its position was predicted from wobbles in Uranus’ orbit.' },
 };
 const PLANET_NAMES = Object.keys(PLANET_META);
+
+/* Major moons — osculating elements from JPL Horizons at epoch 2026-06-11 (d=9659),
+   planet-centric ecliptic frame: el = [N, i, w, a(AU), e, M0, n(°/day)].
+   Real periods + real epoch phases; directions are true, only display radius is stylized. */
+const MOON_EPOCH = 9659.0;
+const MOONS = {
+  phobos:    { planet: 'mars',    size: 0.05,  color: 0x8a7d72, el: [80.738, 26.1841, 227.9558, 6.2695e-5, 0.014896, 247.4292, 1127.8825628],
+               dia: '22 km', fact: 'Orbits Mars faster than Mars spins — it rises in the west twice a day, and is slowly spiraling in.' },
+  deimos:    { planet: 'mars',    size: 0.045, color: 0x9a8d82, el: [81.3465, 24.121, 42.3644, 1.56818e-4, 0.000262, 127.7645, 285.1137176],
+               dia: '12 km', fact: 'A tiny, lumpy world — likely a captured asteroid.' },
+  io:        { planet: 'jupiter', size: 0.10,  color: 0xd9c178, el: [338.4899, 2.2198, 119.3889, 2.821049e-3, 0.003717, 234.9191, 203.2393174],
+               dia: '3,643 km', fact: 'The most volcanically active body in the solar system, kneaded by Jupiter’s tides.' },
+  europa:    { planet: 'jupiter', size: 0.09,  color: 0xcfc5b8, el: [326.0026, 2.1063, 322.7913, 4.487463e-3, 0.009381, 110.2381, 101.3018998],
+               dia: '3,122 km', fact: 'Beneath its ice shell hides an ocean with more water than all of Earth’s seas combined.' },
+  ganymede:  { planet: 'jupiter', size: 0.13,  color: 0xa89c8c, el: [339.1396, 2.342, 21.511, 7.155041e-3, 0.001632, 161.6616, 50.3167128],
+               dia: '5,268 km', fact: 'The largest moon in the solar system — bigger than the planet Mercury.' },
+  callisto:  { planet: 'jupiter', size: 0.12,  color: 0x6f655a, el: [336.7188, 1.9523, 32.0568, 1.258759e-2, 0.007383, 313.0321, 21.5631358],
+               dia: '4,821 km', fact: 'The most heavily cratered world known — a 4-billion-year-old surface.' },
+  enceladus: { planet: 'saturn',  size: 0.055, color: 0xe8eef0, el: [169.5175, 28.0457, 165.0094, 1.593708e-3, 0.005917, 30.2761, 261.8988511],
+               dia: '504 km', fact: 'Geysers at its south pole jet water ice into space, feeding Saturn’s E ring.' },
+  rhea:      { planet: 'saturn',  size: 0.07,  color: 0xb8b2a8, el: [169.9978, 28.2612, 176.3737, 3.524206e-3, 0.000845, 122.0402, 79.6444626],
+               dia: '1,527 km', fact: 'Saturn’s second-largest moon, an ancient ball of ice and rock.' },
+  titan:     { planet: 'saturn',  size: 0.13,  color: 0xd9a85c, el: [169.0795, 27.7072, 178.285, 8.168174e-3, 0.028797, 26.8592, 22.5741048],
+               dia: '5,150 km', fact: 'The only moon with a thick atmosphere — methane rain falls on lakes of liquid natural gas.' },
+  titania:   { planet: 'uranus',  size: 0.08,  color: 0x9a9189, el: [167.643, 97.7626, 263.7517, 2.91637e-3, 0.002424, 124.0639, 41.3504353],
+               dia: '1,578 km', fact: 'Uranus’ largest moon, orbiting in the planet’s sideways-tilted plane.' },
+  oberon:    { planet: 'uranus',  size: 0.08,  color: 0x8a8178, el: [167.7089, 97.9057, 149.4681, 3.901273e-3, 0.001804, 314.5524, 26.7260088],
+               dia: '1,523 km', fact: 'The outermost of Uranus’ five major moons, discovered by William Herschel in 1787.' },
+  triton:    { planet: 'neptune', size: 0.10,  color: 0xcfd5d9, el: [222.772, 129.1292, 219.4035, 2.371475e-3, 2.8e-5, 332.7778, 61.2545456],
+               dia: '2,707 km', fact: 'Orbits backwards — almost certainly a captured Kuiper Belt object, with nitrogen geysers.' },
+};
+// Stylized display radius per system: real spacing ratios, compressed to sit near the planet
+{
+  const byPlanet = {};
+  for (const [n, m] of Object.entries(MOONS)) (byPlanet[m.planet] ??= []).push(n);
+  for (const [planet, list] of Object.entries(byPlanet)) {
+    const aMax = Math.max(...list.map(n => MOONS[n].el[3]));
+    for (const n of list) {
+      MOONS[n].dispR = PLANET_META[planet].size * (2.0 + 1.9 * Math.pow(MOONS[n].el[3] / aMax, 0.8));
+    }
+  }
+}
 const ORRERY_SCALE = 11;
 const scaleDist = rAU => ORRERY_SCALE * Math.pow(rAU, 0.45);
 // Map Schlyter ecliptic (x,y,z; z = ecliptic north) → three.js (y-up) with compression
@@ -817,9 +872,10 @@ function eclToScene(p) {
 
 const ORIGIN = new THREE.Vector3();
 const _tmpV = new THREE.Vector3();
+const _tmpV2 = new THREE.Vector3();
 
 const Orrery = {
-  meshes: {}, orbits: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
+  meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
   showOrbits: true, showLabels: true,
 
@@ -904,6 +960,26 @@ const Orrery = {
         ring.rotation.x = Math.PI / 2 - 0.45;
         mesh.add(ring);
       }
+      const systemMoons = Object.entries(MOONS).filter(([, m]) => m.planet === name);
+      if (systemMoons.length) {
+        node = new THREE.Group();                            // body spins inside; moons don't
+        node.add(mesh);
+        this.spinMeshes[name] = mesh;
+        for (const [mname, mdef] of systemMoons) {
+          const moonMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(mdef.size, 20, 20),
+            new THREE.MeshStandardMaterial({ color: mdef.color, roughness: 0.85, metalness: 0 })
+          );
+          moonMesh.userData.body = mname;
+          const mlabel = makeLabel(mname[0].toUpperCase() + mname.slice(1), 'moon-label');
+          mlabel.visible = false;                            // shown when parent planet is focused
+          moonMesh.add(mlabel);
+          moonMesh.userData.label = mlabel;
+          node.add(moonMesh);
+          this.moonMeshes[mname] = moonMesh;
+          this.clickables.push(moonMesh);
+        }
+      }
       if (name === 'earth') {
         node = new THREE.Group();                            // body spins inside; moon/halo/label don't
         node.add(mesh);
@@ -926,7 +1002,14 @@ const Orrery = {
         );
         applyTexture(moon.material, TEXTURES.moon);
         moon.userData.isMoon = true;
+        moon.userData.body = 'moon';
+        const moonLabel = makeLabel('Moon', 'moon-label');
+        moonLabel.visible = false;
+        moon.add(moonLabel);
+        moon.userData.label = moonLabel;
         node.add(moon);
+        this.clickables.push(moon);
+        this.earthMoonLabel = moonLabel;
         const halo = new THREE.Sprite(new THREE.SpriteMaterial({
           map: glowTexture('rgba(94,234,212,0.5)', 'rgba(94,234,212,0)'),
           transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
@@ -975,7 +1058,7 @@ const Orrery = {
         const body = hits[0].object.userData.body;
         showBodyInfo(body, 'orrery-info', () => { this.highlightOrbit(null); this.setFocus(null); });
         this.highlightOrbit(this.orbits[body] ? body : null);
-        this.setFocus(this.meshes[body] ? body : null);     // sun → back to heliocentric
+        this.setFocus(this.meshes[body] || MOONS[body] || body === 'moon' ? body : null);  // sun → heliocentric
       } else {
         document.getElementById('orrery-info').classList.remove('open');
         this.highlightOrbit(null);
@@ -1004,10 +1087,26 @@ const Orrery = {
     document.getElementById('orrery-toggles').appendChild(dimmer);
   },
 
-  // Camera focus: null = Sun (origin); a planet name = glide to it and ride along
+  // Camera focus: null = Sun (origin); a planet/moon name = glide to it and ride along
   setFocus(body) {
     this.focusBody = body;
-    this.controls.minDistance = body ? Math.max(1.2, PLANET_META[body].size * 2.5) : 6;
+    const size = body && (PLANET_META[body]?.size ?? MOONS[body]?.size ?? 0.16);
+    this.controls.minDistance = body ? Math.max(0.45, size * 2.5) : 6;
+    // moon labels show when their system (or one of its moons) is in focus
+    const system = MOONS[body]?.planet || (body === 'moon' ? 'earth' : body);
+    for (const [mname, mdef] of Object.entries(MOONS)) {
+      this.moonMeshes[mname].userData.label.visible = mdef.planet === system;
+    }
+    if (this.earthMoonLabel) this.earthMoonLabel.visible = system === 'earth';
+  },
+
+  // World-space position of the current focus target (moons are nested in groups)
+  _focusPos(out) {
+    if (!this.focusBody) return out.copy(ORIGIN);
+    const moonMesh = this.moonMeshes[this.focusBody]
+      || (this.focusBody === 'moon' ? this.meshes.earth.children.find(c => c.userData.isMoon) : null);
+    if (moonMesh) return moonMesh.getWorldPosition(out);
+    return out.copy(this.meshes[this.focusBody].position);
   },
 
   // Orient the textured globe so Greenwich faces RA = GMST (true rotation +
@@ -1048,9 +1147,16 @@ const Orrery = {
         : helio(name, d);
       this.meshes[name].position.copy(eclToScene(p));
       if (name === 'earth') this.orientEarth(d);
-      else this.meshes[name].rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
+      else (this.spinMeshes[name] || this.meshes[name]).rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
     }
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
+    // Moons: real Kepler propagation, true direction, display-scaled radius
+    for (const [mname, mdef] of Object.entries(MOONS)) {
+      const el = mdef.el;
+      const p = orbitalToEcliptic([el[0], el[1], el[2], el[3], el[4], el[5] + el[6] * (d - MOON_EPOCH)]);
+      const k = mdef.dispR / p.r;
+      this.moonMeshes[mname].position.set(p.x * k, p.z * k, -p.y * k);
+    }
     // Moon around Earth (exaggerated)
     const moonMesh = this.meshes.earth.children.find(c => c.userData.isMoon);
     if (moonMesh) {
@@ -1059,8 +1165,8 @@ const Orrery = {
       moonMesh.position.set(Math.cos(ang) * 1.15, m.z / m.r * 0.3, -Math.sin(ang) * 1.15);
     }
     // Glide toward the focused body and travel with it as it orbits
-    const desired = this.focusBody ? this.meshes[this.focusBody].position : ORIGIN;
-    const move = _tmpV.copy(desired).sub(this.controls.target).multiplyScalar(0.1);
+    this._focusPos(_tmpV2);
+    const move = _tmpV.copy(_tmpV2).sub(this.controls.target).multiplyScalar(0.1);
     this.controls.target.add(move);
     this.camera.position.add(move);
 
@@ -1091,6 +1197,14 @@ function showBodyInfo(body, cardId, onClose) {
     rows = row('Distance from Earth', (s.r * AU_KM / 1e6).toFixed(1) + ' M km')
          + row('Diameter', '1,392,700 km') + row('Surface temp', '5,505 °C');
     fact = 'The Sun holds 99.86% of the mass of the entire solar system.';
+  } else if (MOONS[body]) {
+    const m = MOONS[body];
+    title = body[0].toUpperCase() + body.slice(1);
+    kind = 'Moon of ' + m.planet[0].toUpperCase() + m.planet.slice(1);
+    rows = row('Distance from ' + m.planet, Math.round(m.el[3] * AU_KM).toLocaleString() + ' km')
+         + row('Diameter', m.dia)
+         + row('Orbital period', (360 / m.el[6]).toFixed(2) + ' days');
+    fact = m.fact;
   } else if (body === 'moon') {
     title = 'Moon'; kind = 'Natural satellite';
     const m = moonGeo(d);
@@ -1382,7 +1496,17 @@ const Sky = {
     // Solar-system bodies on the sphere
     for (const name of Object.keys(SKY_BODIES)) {
       const eq = bodyEquatorial(name, d);
-      this.bodySprites[name].position.copy(eqToVec(eq.ra, eq.dec, SKY_R * 0.97));
+      if (name === 'moon') {
+        // Topocentric correction — lunar parallax shifts up to ~1° vs geocentric
+        const cd = Math.cos(eq.dec);
+        const mx = eq.r * cd * Math.cos(eq.ra), my = eq.r * cd * Math.sin(eq.ra), mz = eq.r * Math.sin(eq.dec);
+        const RE = 4.26352e-5;                               // Earth radius, AU
+        const tx = mx - RE * cP * Math.cos(lst), ty = my - RE * cP * Math.sin(lst), tz = mz - RE * sP;
+        const tr = Math.sqrt(tx * tx + ty * ty + tz * tz);
+        this.bodySprites[name].position.copy(eqToVec(Math.atan2(ty, tx), Math.asin(tz / tr), SKY_R * 0.97));
+      } else {
+        this.bodySprites[name].position.copy(eqToVec(eq.ra, eq.dec, SKY_R * 0.97));
+      }
     }
 
     // Atmosphere tint + star fading by sun altitude
