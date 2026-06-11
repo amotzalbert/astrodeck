@@ -1364,7 +1364,7 @@ const Sky = {
     // Look-around controls
     const el = this.renderer.domElement;
     let dragging = false, px = 0, py = 0;
-    el.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointerdown', e => { dragging = true; this._resetTarget = null; px = e.clientX; py = e.clientY; el.setPointerCapture(e.pointerId); });
     el.addEventListener('pointermove', e => {
       if (!dragging) return;
       const k = this.camera.fov / 600;
@@ -1376,9 +1376,17 @@ const Sky = {
     el.addEventListener('pointerup', () => dragging = false);
     el.addEventListener('wheel', e => {
       e.preventDefault();
+      this._resetTarget = null;
       this.camera.fov = Math.max(20, Math.min(95, this.camera.fov + e.deltaY * 0.04));
       this.camera.updateProjectionMatrix();
     }, { passive: false });
+
+    // Reset view button — eases back to the default south-facing POV
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'toggle-pill';
+    resetBtn.innerHTML = `<span style="font-size:13px;line-height:0">⟲</span>Reset view`;
+    resetBtn.onclick = () => this.resetView();
+    document.getElementById('sky-toggles').appendChild(resetBtn);
 
     buildToggles('sky-toggles', [
       { label: 'Constellations', get: () => this.showConst, set: v => { this.showConst = v; if (this.lineGroup) this.lineGroup.visible = v; } },
@@ -1479,10 +1487,32 @@ const Sky = {
     } catch (err) { console.warn('Constellation names unavailable', err); }
   },
 
+  // Ease back to the default POV (south-facing, 28° up, default zoom)
+  resetView() {
+    this._resetTarget = { az: 180 * DEG, alt: 28 * DEG, fov: 60 };
+  },
+
   update() {
     const jd = Sim.jd, d = Sim.d;
     const phi = Loc.lat * DEG;
     const lst = lstRad(jd, Loc.lon);
+
+    if (this._resetTarget) {
+      const t = this._resetTarget;
+      let dAz = (t.az - this.viewAz) % (2 * Math.PI);        // shortest angular path
+      if (dAz > Math.PI) dAz -= 2 * Math.PI;
+      if (dAz < -Math.PI) dAz += 2 * Math.PI;
+      const dAlt = t.alt - this.viewAlt, dFov = t.fov - this.camera.fov;
+      this.viewAz += dAz * 0.12;
+      this.viewAlt += dAlt * 0.12;
+      this.camera.fov += dFov * 0.12;
+      this.camera.updateProjectionMatrix();
+      if (Math.abs(dAz) < 0.002 && Math.abs(dAlt) < 0.002 && Math.abs(dFov) < 0.1) {
+        this.viewAz = t.az; this.viewAlt = t.alt;
+        this.camera.fov = t.fov; this.camera.updateProjectionMatrix();
+        this._resetTarget = null;
+      }
+    }
 
     // Equatorial → horizon rotation: images of the equatorial basis vectors
     const cL = Math.cos(lst), sL = Math.sin(lst), cP = Math.cos(phi), sP = Math.sin(phi);
