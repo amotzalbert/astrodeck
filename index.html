@@ -1,0 +1,1528 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AstroDeck — Night Sky Station</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=JetBrains+Mono:wght@300;400;600&display=swap" rel="stylesheet">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<style>
+  :root {
+    --bg: #04060d;
+    --bg-2: #080c18;
+    --panel: rgba(13, 19, 36, 0.72);
+    --panel-solid: #0d1324;
+    --border: rgba(94, 234, 212, 0.14);
+    --border-soft: rgba(148, 163, 184, 0.12);
+    --text: #dbe4f3;
+    --text-dim: #7d8aa5;
+    --accent: #5eead4;
+    --accent-2: #38bdf8;
+    --violet: #8b5cf6;
+    --warn: #fbbf24;
+    --glow: 0 0 24px rgba(94, 234, 212, 0.18);
+    --radius: 14px;
+    --font: 'Space Grotesk', system-ui, -apple-system, sans-serif;
+    --mono: 'JetBrains Mono', ui-monospace, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    overflow: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(ellipse 80% 50% at 70% -10%, rgba(56, 189, 248, 0.08), transparent),
+      radial-gradient(ellipse 60% 40% at 10% 110%, rgba(139, 92, 246, 0.07), transparent);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ---------- Header ---------- */
+  header {
+    position: fixed; top: 0; left: 0; right: 0;
+    height: 58px;
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 18px;
+    background: linear-gradient(180deg, rgba(8,12,24,0.92), rgba(8,12,24,0.78));
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border);
+    z-index: 50;
+  }
+  .logo {
+    display: flex; align-items: baseline; gap: 8px;
+    user-select: none; white-space: nowrap;
+  }
+  .logo .mark {
+    font-weight: 700; font-size: 17px; letter-spacing: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--violet));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .logo .sub {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 2px;
+    color: var(--text-dim); text-transform: uppercase;
+  }
+  nav.tabs {
+    display: flex; gap: 4px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px; padding: 3px;
+  }
+  nav.tabs button {
+    appearance: none; border: 0; cursor: pointer;
+    background: transparent; color: var(--text-dim);
+    font-family: var(--font); font-size: 12.5px; font-weight: 500;
+    letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 7px 14px; border-radius: 8px;
+    transition: all .18s ease;
+  }
+  nav.tabs button:hover { color: var(--text); }
+  nav.tabs button.active {
+    background: linear-gradient(135deg, rgba(94,234,212,0.16), rgba(56,189,248,0.14));
+    color: var(--accent);
+    box-shadow: inset 0 0 0 1px rgba(94,234,212,0.25), var(--glow);
+  }
+  .spacer { flex: 1; }
+  .hud-chip {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--mono); font-size: 11px;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.035);
+    border: 1px solid var(--border-soft);
+    border-radius: 9px; padding: 7px 12px;
+    cursor: default; white-space: nowrap;
+  }
+  .hud-chip.clickable { cursor: pointer; transition: border-color .15s; }
+  .hud-chip.clickable:hover { border-color: rgba(94,234,212,0.4); color: var(--text); }
+  .hud-chip .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 8px var(--accent);
+  }
+  .hud-chip b { color: var(--text); font-weight: 600; }
+
+  /* ---------- Views ---------- */
+  main { position: fixed; inset: 58px 0 0 0; z-index: 1; }
+  .view { position: absolute; inset: 0; display: none; }
+  .view.active { display: block; }
+  .view canvas { display: block; }
+  .canvas-host { position: absolute; inset: 0; }
+  .labels-host { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+  .obj-label {
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.2px;
+    color: rgba(235, 242, 252, 0.98); text-transform: uppercase;
+    text-shadow: 0 0 6px rgba(0,0,0,0.95), 0 1px 3px rgba(0,0,0,0.9);
+    padding-left: 10px;
+  }
+  .obj-label.planet { color: #7ef5e2; }
+  .obj-label.star-name { color: rgba(253, 211, 92, 0.95); font-size: 9.5px; }
+  .obj-label.const-name {
+    color: rgba(196, 167, 255, 0.92); font-size: 10px; letter-spacing: 2.5px;
+    font-weight: 600;
+  }
+
+  /* ---------- Floating control bar ---------- */
+  .ctrl-bar {
+    position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 14px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5), var(--glow);
+    z-index: 20;
+    flex-wrap: wrap; justify-content: center;
+    max-width: calc(100vw - 24px);
+  }
+  .ctrl-bar .group { display: flex; align-items: center; gap: 6px; }
+  .ctrl-bar .sep { width: 1px; height: 22px; background: var(--border-soft); }
+  .icon-btn {
+    appearance: none; cursor: pointer;
+    width: 34px; height: 34px;
+    display: grid; place-items: center;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    color: var(--text); font-size: 14px;
+    transition: all .15s;
+  }
+  .icon-btn:hover { border-color: rgba(94,234,212,0.45); color: var(--accent); }
+  .icon-btn.on {
+    background: rgba(94,234,212,0.14); color: var(--accent);
+    border-color: rgba(94,234,212,0.4);
+  }
+  .speed-display {
+    font-family: var(--mono); font-size: 11px; color: var(--accent);
+    min-width: 76px; text-align: center; letter-spacing: 0.5px;
+  }
+  .sim-clock {
+    font-family: var(--mono); font-size: 11.5px; color: var(--text);
+    letter-spacing: 0.5px; white-space: nowrap;
+  }
+  .sim-clock .dim { color: var(--text-dim); }
+  input[type="datetime-local"] {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono); font-size: 11px;
+    padding: 6px 8px;
+    color-scheme: dark;
+  }
+  .text-btn {
+    appearance: none; cursor: pointer;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-soft);
+    border-radius: 8px;
+    color: var(--text); font-family: var(--font);
+    font-size: 11px; font-weight: 500; letter-spacing: 1px; text-transform: uppercase;
+    padding: 8px 12px;
+    transition: all .15s;
+  }
+  .text-btn:hover { border-color: rgba(94,234,212,0.45); color: var(--accent); }
+  .text-btn.primary {
+    background: linear-gradient(135deg, rgba(94,234,212,0.18), rgba(56,189,248,0.16));
+    border-color: rgba(94,234,212,0.35); color: var(--accent);
+  }
+
+  /* ---------- Toggle pills (sky view) ---------- */
+  .toggle-stack {
+    position: absolute; top: 14px; right: 14px;
+    display: flex; flex-direction: column; gap: 6px;
+    z-index: 20;
+  }
+  .toggle-pill {
+    appearance: none; cursor: pointer;
+    display: flex; align-items: center; gap: 8px;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    color: var(--text-dim);
+    font-family: var(--font); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 8px 12px;
+    transition: all .15s;
+    text-align: left;
+  }
+  .toggle-pill .led {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: rgba(125,138,165,0.4);
+    transition: all .15s; flex-shrink: 0;
+  }
+  .toggle-pill.on { color: var(--text); border-color: rgba(94,234,212,0.3); }
+  .toggle-pill.on .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+  /* ---------- Info card ---------- */
+  .info-card {
+    position: absolute; top: 14px; left: 14px;
+    width: 280px; max-width: calc(100vw - 28px);
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    padding: 16px;
+    z-index: 20;
+    display: none;
+  }
+  .info-card.open { display: block; }
+  .info-card h3 {
+    font-size: 16px; font-weight: 600; letter-spacing: 1.5px; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 2px;
+  }
+  .info-card .kind {
+    font-family: var(--mono); font-size: 9.5px; letter-spacing: 2px;
+    color: var(--text-dim); text-transform: uppercase; margin-bottom: 12px;
+  }
+  .info-card .row {
+    display: flex; justify-content: space-between; gap: 10px;
+    font-size: 12px; padding: 5px 0;
+    border-bottom: 1px solid rgba(148,163,184,0.08);
+  }
+  .info-card .row:last-of-type { border-bottom: 0; }
+  .info-card .row .k { color: var(--text-dim); }
+  .info-card .row .v { font-family: var(--mono); font-size: 11px; color: var(--text); text-align: right; }
+  .info-card .fact {
+    margin-top: 10px; font-size: 11.5px; line-height: 1.5;
+    color: var(--text-dim); font-style: italic;
+  }
+  .info-card .close {
+    position: absolute; top: 10px; right: 12px;
+    cursor: pointer; color: var(--text-dim); font-size: 16px;
+    background: none; border: 0;
+  }
+  .info-card .close:hover { color: var(--text); }
+
+  .hint {
+    position: absolute; bottom: 78px; left: 50%; transform: translateX(-50%);
+    font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+    color: rgba(125,138,165,0.65); text-transform: uppercase;
+    pointer-events: none; z-index: 15;
+    text-align: center; white-space: nowrap;
+  }
+
+  /* ---------- Location modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(2, 4, 10, 0.7);
+    backdrop-filter: blur(6px);
+    z-index: 100;
+    display: none;
+    align-items: center; justify-content: center;
+  }
+  .modal-backdrop.open { display: flex; }
+  .modal {
+    width: 360px; max-width: calc(100vw - 32px);
+    background: var(--panel-solid);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.7), var(--glow);
+    padding: 22px;
+  }
+  .modal h2 {
+    font-size: 14px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 4px;
+  }
+  .modal p.desc { font-size: 12px; color: var(--text-dim); margin-bottom: 16px; line-height: 1.5; }
+  .modal label {
+    display: block;
+    font-family: var(--mono); font-size: 10px; letter-spacing: 1.5px;
+    color: var(--text-dim); text-transform: uppercase;
+    margin: 12px 0 5px;
+  }
+  .modal input[type="text"], .modal input[type="number"] {
+    width: 100%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border-soft);
+    border-radius: 9px;
+    color: var(--text);
+    font-family: var(--mono); font-size: 13px;
+    padding: 9px 11px;
+  }
+  .modal input:focus { outline: none; border-color: rgba(94,234,212,0.5); }
+  .modal .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .modal .actions { display: flex; gap: 8px; margin-top: 20px; }
+  .modal .actions .text-btn { flex: 1; padding: 10px; }
+  .geo-status { font-family: var(--mono); font-size: 10.5px; color: var(--warn); margin-top: 8px; min-height: 14px; }
+
+  /* ---------- Feeds view ---------- */
+  #view-feeds { overflow-y: auto; padding: 24px; }
+  .feeds-wrap { max-width: 1100px; margin: 0 auto; }
+  .feeds-head { margin-bottom: 20px; }
+  .feeds-head h2 {
+    font-size: 18px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase;
+  }
+  .feeds-head h2 span {
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .feeds-head p { font-size: 12.5px; color: var(--text-dim); margin-top: 6px; max-width: 640px; line-height: 1.55; }
+  .feed-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+    padding-bottom: 40px;
+  }
+  .feed-card {
+    background: var(--panel);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color .2s, transform .2s;
+    display: flex; flex-direction: column;
+  }
+  .feed-card:hover { border-color: rgba(94,234,212,0.3); transform: translateY(-2px); }
+  .feed-card.wide { grid-column: 1 / -1; }
+  .feed-media {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    background: var(--bg-2);
+    display: grid; place-items: center;
+    overflow: hidden;
+  }
+  .feed-card.wide .feed-media { aspect-ratio: 21 / 7; }
+  .feed-media iframe, .feed-media img { width: 100%; height: 100%; border: 0; object-fit: cover; }
+  .feed-media .play-cta {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    cursor: pointer;
+    background:
+      radial-gradient(circle at center, rgba(94,234,212,0.06), transparent 70%),
+      linear-gradient(180deg, rgba(8,12,24,0.3), rgba(8,12,24,0.7));
+    transition: background .2s;
+  }
+  .feed-media .play-cta:hover { background: radial-gradient(circle at center, rgba(94,234,212,0.12), transparent 70%); }
+  .feed-media .play-cta .ring {
+    width: 58px; height: 58px; border-radius: 50%;
+    border: 1.5px solid rgba(94,234,212,0.6);
+    display: grid; place-items: center;
+    color: var(--accent); font-size: 18px;
+    box-shadow: var(--glow);
+  }
+  .feed-body { padding: 14px 16px 16px; flex: 1; display: flex; flex-direction: column; gap: 6px; }
+  .feed-body .feed-meta { display: flex; align-items: center; gap: 8px; }
+  .feed-body h3 { font-size: 14px; font-weight: 600; letter-spacing: 0.5px; }
+  .feed-tag {
+    font-family: var(--mono); font-size: 8.5px; letter-spacing: 1.5px;
+    text-transform: uppercase;
+    padding: 3px 7px; border-radius: 5px;
+  }
+  .feed-tag.live { color: #f87171; background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.3); }
+  .feed-tag.auto { color: var(--accent); background: rgba(94,234,212,0.1); border: 1px solid rgba(94,234,212,0.25); }
+  .feed-tag.daily { color: var(--violet); background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.3); }
+  .feed-tag.ext { color: var(--text-dim); background: rgba(148,163,184,0.1); border: 1px solid rgba(148,163,184,0.25); }
+  .feed-body p { font-size: 11.5px; color: var(--text-dim); line-height: 1.5; flex: 1; }
+  .feed-body .feed-actions { display: flex; gap: 8px; margin-top: 8px; }
+  .feed-link {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 1px;
+    color: var(--accent-2); text-decoration: none; text-transform: uppercase;
+  }
+  .feed-link:hover { text-decoration: underline; }
+  .apod-caption { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
+
+  /* ---------- Loading overlay ---------- */
+  #loader {
+    position: fixed; inset: 0; z-index: 200;
+    background: var(--bg);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 18px;
+    transition: opacity .6s ease;
+  }
+  #loader.done { opacity: 0; pointer-events: none; }
+  #loader .orbit-spin {
+    width: 64px; height: 64px; border-radius: 50%;
+    border: 1px solid rgba(94,234,212,0.15);
+    position: relative;
+    animation: spin 2.4s linear infinite;
+  }
+  #loader .orbit-spin::before {
+    content: ''; position: absolute;
+    top: -4px; left: 50%; margin-left: -4px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 12px var(--accent);
+  }
+  #loader .orbit-spin::after {
+    content: ''; position: absolute;
+    top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 14px; height: 14px; border-radius: 50%;
+    background: radial-gradient(circle, #fde68a, #f59e0b);
+    box-shadow: 0 0 18px rgba(245,158,11,0.7);
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loader .load-text {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 3px;
+    color: var(--text-dim); text-transform: uppercase;
+  }
+
+  /* ---------- Scrollbar ---------- */
+  ::-webkit-scrollbar { width: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: rgba(94,234,212,0.15); border-radius: 5px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(94,234,212,0.3); }
+
+  @media (max-width: 760px) {
+    header { gap: 10px; padding: 0 10px; }
+    .logo .sub { display: none; }
+    #chip-clock { display: none; }
+    nav.tabs button { padding: 7px 9px; font-size: 11px; }
+    .hint { display: none; }
+    .toggle-stack { top: 8px; right: 8px; }
+    .toggle-pill { padding: 7px 9px; font-size: 9.5px; }
+    .info-card { top: 8px; left: 8px; width: 240px; }
+  }
+</style>
+</head>
+<body>
+
+<div id="loader">
+  <div class="orbit-spin"></div>
+  <div class="load-text" id="loader-text">Initializing star charts…</div>
+</div>
+
+<header>
+  <div class="logo">
+    <span class="mark">ASTRODECK</span>
+    <span class="sub">Night Sky Station</span>
+  </div>
+  <nav class="tabs" id="tabs">
+    <button data-view="orrery" class="active">Solar System</button>
+    <button data-view="sky">Sky View</button>
+    <button data-view="feeds">Telescope Feeds</button>
+  </nav>
+  <div class="spacer"></div>
+  <div class="hud-chip clickable" id="chip-location" title="Set observing location">
+    <span class="dot"></span>
+    <span id="loc-label">—</span>
+  </div>
+  <div class="hud-chip" id="chip-clock">
+    <span id="clock-label">—</span>
+  </div>
+</header>
+
+<main>
+  <!-- ============ ORRERY VIEW ============ -->
+  <section class="view active" id="view-orrery">
+    <div class="canvas-host" id="orrery-canvas"></div>
+    <div class="labels-host" id="orrery-labels"></div>
+    <div class="info-card" id="orrery-info"></div>
+    <div class="hint">Drag to orbit · Scroll to zoom · Click a planet for details</div>
+    <div class="toggle-stack" id="orrery-toggles"></div>
+  </section>
+
+  <!-- ============ SKY VIEW ============ -->
+  <section class="view" id="view-sky">
+    <div class="canvas-host" id="sky-canvas"></div>
+    <div class="labels-host" id="sky-labels"></div>
+    <div class="info-card" id="sky-info"></div>
+    <div class="hint">Drag to look around · Scroll to zoom · The sky above your home, right now</div>
+    <div class="toggle-stack" id="sky-toggles"></div>
+  </section>
+
+  <!-- ============ FEEDS VIEW ============ -->
+  <section class="view" id="view-feeds">
+    <div class="feeds-wrap">
+      <div class="feeds-head">
+        <h2>Telescope <span>Feeds</span></h2>
+        <p>No telescope? No problem. Live and near-live imagery from public space observatories —
+           solar telescopes refresh automatically, video streams load on demand.</p>
+      </div>
+      <div class="feed-grid" id="feed-grid"></div>
+    </div>
+  </section>
+</main>
+
+<!-- ============ TIME CONTROL BAR (shared, shown on 3D views) ============ -->
+<div class="ctrl-bar" id="time-bar">
+  <div class="group">
+    <button class="icon-btn" id="t-slower" title="Slower / reverse">⏮</button>
+    <button class="icon-btn" id="t-play" title="Pause / resume">⏸</button>
+    <button class="icon-btn" id="t-faster" title="Faster">⏭</button>
+    <div class="speed-display" id="t-speed">1×</div>
+  </div>
+  <div class="sep"></div>
+  <div class="group">
+    <div class="sim-clock" id="t-clock"><span class="dim">SIM</span> —</div>
+  </div>
+  <div class="sep"></div>
+  <div class="group">
+    <input type="datetime-local" id="t-date">
+    <button class="text-btn" id="t-set">Go</button>
+    <button class="text-btn primary" id="t-now">Now</button>
+  </div>
+</div>
+
+<!-- ============ LOCATION MODAL ============ -->
+<div class="modal-backdrop" id="loc-modal">
+  <div class="modal">
+    <h2>Observing Location</h2>
+    <p class="desc">The Sky View renders the heavens exactly as seen from this point on Earth.</p>
+    <label>Name</label>
+    <input type="text" id="loc-name" placeholder="Home">
+    <div class="grid2">
+      <div>
+        <label>Latitude °</label>
+        <input type="number" id="loc-lat" step="0.0001" min="-90" max="90">
+      </div>
+      <div>
+        <label>Longitude °</label>
+        <input type="number" id="loc-lon" step="0.0001" min="-180" max="180">
+      </div>
+    </div>
+    <div class="geo-status" id="geo-status"></div>
+    <div class="actions">
+      <button class="text-btn" id="loc-geo">📡 Use my location</button>
+      <button class="text-btn primary" id="loc-save">Save</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
+
+/* =====================================================================
+   ASTRONOMY ENGINE
+   Planetary positions via Paul Schlyter's simplified Keplerian elements
+   (good to a few arcminutes — plenty for visualization).
+   ===================================================================== */
+const DEG = Math.PI / 180;
+const rev = a => a - Math.floor(a / 360) * 360;             // normalize to [0,360)
+const jdFromDate = date => date.getTime() / 86400000 + 2440587.5;
+const dDays = jd => jd - 2451543.5;                          // Schlyter epoch (2000 Jan 0.0)
+
+// Orbital elements: [N, i, w, a, e, M] each as base + rate*d. a in AU.
+const ELEMENTS = {
+  mercury: d => [48.3313 + 3.24587e-5*d, 7.0047 + 5.00e-8*d, 29.1241 + 1.01444e-5*d, 0.387098, 0.205635 + 5.59e-10*d, 168.6562 + 4.0923344368*d],
+  venus:   d => [76.6799 + 2.46590e-5*d, 3.3946 + 2.75e-8*d, 54.8910 + 1.38374e-5*d, 0.723330, 0.006773 - 1.302e-9*d, 48.0052 + 1.6021302244*d],
+  mars:    d => [49.5574 + 2.11081e-5*d, 1.8497 - 1.78e-8*d, 286.5016 + 2.92961e-5*d, 1.523688, 0.093405 + 2.516e-9*d, 18.6021 + 0.5240207766*d],
+  jupiter: d => [100.4542 + 2.76854e-5*d, 1.3030 - 1.557e-7*d, 273.8777 + 1.64505e-5*d, 5.20256, 0.048498 + 4.469e-9*d, 19.8950 + 0.0830853001*d],
+  saturn:  d => [113.6634 + 2.38980e-5*d, 2.4886 - 1.081e-7*d, 339.3939 + 2.97661e-5*d, 9.55475, 0.055546 - 9.499e-9*d, 316.9670 + 0.0334442282*d],
+  uranus:  d => [74.0005 + 1.3978e-5*d, 0.7733 + 1.9e-8*d, 96.6612 + 3.0565e-5*d, 19.18171 - 1.55e-8*d, 0.047318 + 7.45e-9*d, 142.5905 + 0.011725806*d],
+  neptune: d => [131.7806 + 3.0173e-5*d, 1.7700 - 2.55e-7*d, 272.8461 - 6.027e-6*d, 30.05826 + 3.313e-8*d, 0.008606 + 2.15e-9*d, 260.2471 + 0.005995147*d],
+};
+// Sun's apparent orbit (= Earth's, geocentric form)
+const sunElements = d => [0, 0, 282.9404 + 4.70935e-5*d, 1.000000, 0.016709 - 1.151e-9*d, 356.0470 + 0.9856002585*d];
+// Moon around Earth (a in Earth radii)
+const moonElements = d => [125.1228 - 0.0529538083*d, 5.1454, 318.0634 + 0.1643573223*d, 60.2666, 0.054900, 115.3654 + 13.0649929509*d];
+
+function solveKepler(M, e) {                                 // M in degrees → E in degrees
+  let E = M + (e * 180 / Math.PI) * Math.sin(M * DEG) * (1 + e * Math.cos(M * DEG));
+  for (let k = 0; k < 8; k++) {
+    const dE = (E - (e * 180 / Math.PI) * Math.sin(E * DEG) - M) / (1 - e * Math.cos(E * DEG));
+    E -= dE;
+    if (Math.abs(dE) < 1e-6) break;
+  }
+  return E;
+}
+
+// → {x,y,z} ecliptic coords (units = a's units) + r, lon/lat handy fields
+function orbitalToEcliptic([N, i, w, a, e, M]) {
+  M = rev(M);
+  const E = solveKepler(M, e);
+  const xv = a * (Math.cos(E * DEG) - e);
+  const yv = a * Math.sqrt(1 - e * e) * Math.sin(E * DEG);
+  const v = Math.atan2(yv, xv) / DEG;                        // true anomaly
+  const r = Math.sqrt(xv * xv + yv * yv);
+  const vw = (v + w) * DEG, Nr = N * DEG, ir = i * DEG;
+  const x = r * (Math.cos(Nr) * Math.cos(vw) - Math.sin(Nr) * Math.sin(vw) * Math.cos(ir));
+  const y = r * (Math.sin(Nr) * Math.cos(vw) + Math.cos(Nr) * Math.sin(vw) * Math.cos(ir));
+  const z = r * Math.sin(vw) * Math.sin(ir);
+  return { x, y, z, r };
+}
+
+// Heliocentric ecliptic position of a planet (AU)
+const helio = (name, d) => orbitalToEcliptic(ELEMENTS[name](d));
+
+// Geocentric ecliptic position of the Sun (AU)
+function sunGeo(d) { return orbitalToEcliptic(sunElements(d)); }
+
+// Geocentric ecliptic position of the Moon (AU), with main perturbations
+function moonGeo(d) {
+  const el = moonElements(d);
+  const p = orbitalToEcliptic(el);
+  let lon = Math.atan2(p.y, p.x) / DEG;
+  let lat = Math.asin(p.z / p.r) / DEG;
+  const Ms = rev(356.0470 + 0.9856002585 * d);               // Sun mean anomaly
+  const Mm = rev(el[5]);                                     // Moon mean anomaly
+  const Ls = rev(Ms + 282.9404 + 4.70935e-5 * d);            // Sun mean longitude
+  const Lm = rev(Mm + el[2] + el[0]);                        // Moon mean longitude
+  const D = rev(Lm - Ls);                                    // elongation
+  const F = rev(Lm - el[0]);                                 // argument of latitude
+  lon += -1.274 * Math.sin((Mm - 2 * D) * DEG)               // evection
+       + 0.658 * Math.sin(2 * D * DEG)                       // variation
+       - 0.186 * Math.sin(Ms * DEG)                          // yearly equation
+       - 0.059 * Math.sin((2 * Mm - 2 * D) * DEG)
+       - 0.057 * Math.sin((Mm - 2 * D + Ms) * DEG);
+  lat += -0.173 * Math.sin((F - 2 * D) * DEG);
+  const rAU = p.r * 4.26352e-5;                              // Earth radii → AU
+  return {
+    x: rAU * Math.cos(lon * DEG) * Math.cos(lat * DEG),
+    y: rAU * Math.sin(lon * DEG) * Math.cos(lat * DEG),
+    z: rAU * Math.sin(lat * DEG),
+    r: rAU,
+  };
+}
+
+const obliquity = d => (23.4393 - 3.563e-7 * d) * DEG;
+
+// Ecliptic xyz → equatorial {ra, dec, r} (radians)
+function eclToEq(p, d) {
+  const e = obliquity(d);
+  const xe = p.x;
+  const ye = p.y * Math.cos(e) - p.z * Math.sin(e);
+  const ze = p.y * Math.sin(e) + p.z * Math.cos(e);
+  const r = Math.sqrt(xe * xe + ye * ye + ze * ze);
+  return { ra: Math.atan2(ye, xe), dec: Math.asin(ze / r), r };
+}
+
+// Geocentric equatorial position of any body for the sky view
+function bodyEquatorial(name, d) {
+  if (name === 'sun') return eclToEq(sunGeo(d), d);
+  if (name === 'moon') return eclToEq(moonGeo(d), d);
+  const h = helio(name, d), s = sunGeo(d);
+  return eclToEq({ x: h.x + s.x, y: h.y + s.y, z: h.z + s.z }, d);
+}
+
+// Local sidereal time in radians
+function lstRad(jd, lonDeg) {
+  return rev(280.46061837 + 360.98564736629 * (jd - 2451545.0) + lonDeg) * DEG;
+}
+
+// Sun altitude (deg) — drives sky tint
+function sunAltitude(jd, latDeg, lonDeg) {
+  const d = dDays(jd);
+  const eq = bodyEquatorial('sun', d);
+  const H = lstRad(jd, lonDeg) - eq.ra;
+  const phi = latDeg * DEG;
+  return Math.asin(Math.sin(phi) * Math.sin(eq.dec) + Math.cos(phi) * Math.cos(eq.dec) * Math.cos(H)) / DEG;
+}
+
+/* =====================================================================
+   TIME ENGINE + LOCATION
+   ===================================================================== */
+const SPEEDS = [
+  { f: -86400, label: '−1 d/s' }, { f: -3600, label: '−1 h/s' }, { f: -60, label: '−1 m/s' },
+  { f: 1, label: '1× real' }, { f: 60, label: '1 min/s' }, { f: 600, label: '10 min/s' },
+  { f: 3600, label: '1 hr/s' }, { f: 21600, label: '6 hr/s' }, { f: 86400, label: '1 day/s' },
+  { f: 604800, label: '1 wk/s' },
+];
+const Sim = {
+  ms: Date.now(),
+  speedIdx: 3,
+  paused: false,
+  lastTick: performance.now(),
+  tick() {
+    const now = performance.now();
+    const dt = now - this.lastTick;
+    this.lastTick = now;
+    if (!this.paused) this.ms += dt * SPEEDS[this.speedIdx].f;
+  },
+  get date() { return new Date(this.ms); },
+  get jd() { return this.ms / 86400000 + 2440587.5; },
+  get d() { return dDays(this.jd); },
+};
+
+const DEFAULT_LOC = { name: 'Tel Aviv (default)', lat: 32.0809, lon: 34.7806 };
+let Loc = (() => {
+  try { return JSON.parse(localStorage.getItem('astrodeck.location')) || DEFAULT_LOC; }
+  catch { return DEFAULT_LOC; }
+})();
+function saveLoc(l) { Loc = l; localStorage.setItem('astrodeck.location', JSON.stringify(l)); refreshLocChip(); }
+function refreshLocChip() {
+  const fmt = (v, pos, neg) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? pos : neg}`;
+  document.getElementById('loc-label').innerHTML =
+    `<b>${Loc.name}</b>&nbsp; ${fmt(Loc.lat, 'N', 'S')} ${fmt(Loc.lon, 'E', 'W')}`;
+}
+
+/* =====================================================================
+   SHARED HELPERS
+   ===================================================================== */
+function glowTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,0)') {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, inner);
+  grad.addColorStop(0.25, inner);
+  grad.addColorStop(1, outer);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+const starSprite = glowTexture();
+
+function makeLabel(text, cls) {
+  const el = document.createElement('div');
+  el.className = 'obj-label ' + (cls || '');
+  el.textContent = text;
+  return new CSS2DObject(el);
+}
+
+function bvToColor(bv) {
+  if (bv == null || isNaN(bv)) return 0xf8f7ff;
+  if (bv < 0.0) return 0xaabfff;
+  if (bv < 0.3) return 0xcad7ff;
+  if (bv < 0.6) return 0xf8f7ff;
+  if (bv < 0.9) return 0xfff4ea;
+  if (bv < 1.4) return 0xffd2a1;
+  return 0xffcc6f;
+}
+
+/* =====================================================================
+   ORRERY — 3D SOLAR SYSTEM
+   Distances compressed (r^0.45) so Mercury and Neptune share a stage.
+   ===================================================================== */
+const PLANET_META = {
+  mercury: { color: 0x9c9a92, size: 0.34, kind: 'Rocky planet',  diameter: '4,879 km',  day: '58.6 Earth days', year: '88 days',    fact: 'A year on Mercury is shorter than its day–night cycle: one full solar day lasts 176 Earth days.' },
+  venus:   { color: 0xe6c98e, size: 0.56, kind: 'Rocky planet',  diameter: '12,104 km', day: '243 Earth days',  year: '225 days',   fact: 'Venus spins backwards — the Sun rises in the west — and its surface is hot enough to melt lead.' },
+  earth:   { color: 0x4f8fd9, size: 0.58, kind: 'Home',          diameter: '12,742 km', day: '23.9 hours',      year: '365.25 days', fact: 'The only place in the universe confirmed to host life — and your observing location.' },
+  mars:    { color: 0xd97b4f, size: 0.44, kind: 'Rocky planet',  diameter: '6,779 km',  day: '24.6 hours',      year: '687 days',   fact: 'Olympus Mons on Mars is the tallest volcano known — nearly three times the height of Everest.' },
+  jupiter: { color: 0xd9b38c, size: 1.55, kind: 'Gas giant',     diameter: '139,820 km', day: '9.9 hours',      year: '11.9 years', fact: 'Jupiter has more than twice the mass of all the other planets combined.' },
+  saturn:  { color: 0xe8d5a3, size: 1.32, kind: 'Gas giant',     diameter: '116,460 km', day: '10.7 hours',     year: '29.5 years', fact: "Saturn's rings are made of ice and rock, yet average only about 10 metres thick." },
+  uranus:  { color: 0x9fd8e0, size: 0.92, kind: 'Ice giant',     diameter: '50,724 km', day: '17.2 hours',      year: '84 years',   fact: 'Uranus rolls around the Sun on its side — its axis is tilted 98 degrees.' },
+  neptune: { color: 0x5a7de0, size: 0.9,  kind: 'Ice giant',     diameter: '49,244 km', day: '16.1 hours',      year: '165 years',  fact: 'Neptune was found with mathematics before telescopes: its position was predicted from wobbles in Uranus’ orbit.' },
+};
+const PLANET_NAMES = Object.keys(PLANET_META);
+const ORRERY_SCALE = 11;
+const scaleDist = rAU => ORRERY_SCALE * Math.pow(rAU, 0.45);
+// Map Schlyter ecliptic (x,y,z; z = ecliptic north) → three.js (y-up) with compression
+function eclToScene(p) {
+  const r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) || 1e-9;
+  const k = scaleDist(r) / r;
+  return new THREE.Vector3(p.x * k, p.z * k, -p.y * k);
+}
+
+const Orrery = {
+  meshes: {}, orbits: {}, labels: null, renderer: null, labelRenderer: null,
+  scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
+  showOrbits: true, showLabels: true,
+
+  init() {
+    const host = document.getElementById('orrery-canvas');
+    this.scene = new THREE.Scene();
+    this.camera = new THREE.PerspectiveCamera(50, host.clientWidth / host.clientHeight, 0.1, 5000);
+    this.camera.position.set(0, 34, 52);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setSize(host.clientWidth, host.clientHeight);
+    host.appendChild(this.renderer.domElement);
+
+    this.labelRenderer = new CSS2DRenderer({ element: document.getElementById('orrery-labels') });
+    this.labelRenderer.setSize(host.clientWidth, host.clientHeight);
+
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.06;
+    this.controls.minDistance = 6;
+    this.controls.maxDistance = 220;
+
+    // Backdrop starfield
+    const n = 2600, pos = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const v = new THREE.Vector3().randomDirection().multiplyScalar(900 + Math.random() * 600);
+      pos.set([v.x, v.y, v.z], i * 3);
+    }
+    const bgGeo = new THREE.BufferGeometry();
+    bgGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.scene.add(new THREE.Points(bgGeo, new THREE.PointsMaterial({
+      size: 1.6, map: starSprite, color: 0xbfd0e8, transparent: true, opacity: 0.7,
+      sizeAttenuation: false, depthWrite: false,
+    })));
+
+    // Sun
+    const sun = new THREE.Mesh(
+      new THREE.SphereGeometry(2.6, 48, 48),
+      new THREE.MeshBasicMaterial({ color: 0xffd27d })
+    );
+    const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture('rgba(255,200,90,0.9)', 'rgba(255,140,40,0)'),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    sunGlow.scale.setScalar(9);
+    sun.add(sunGlow);
+    sun.add(makeLabel('Sun', 'planet'));
+    sun.userData.body = 'sun';
+    this.scene.add(sun);
+    this.clickables.push(sun);
+    this.scene.add(new THREE.PointLight(0xfff2d5, 2600, 0, 2));
+    this.scene.add(new THREE.AmbientLight(0x223044, 2.2));
+
+    // Planets + orbit paths
+    const allBodies = [...PLANET_NAMES];
+    allBodies.splice(2, 0); // keep order; earth inserted below
+    const order = ['mercury', 'venus', 'earth', 'mars', 'jupiter', 'saturn', 'uranus', 'neptune'];
+    for (const name of order) {
+      const meta = PLANET_META[name];
+      const mesh = new THREE.Mesh(
+        new THREE.SphereGeometry(meta.size, 40, 40),
+        new THREE.MeshStandardMaterial({ color: meta.color, roughness: 0.7, metalness: 0.05 })
+      );
+      mesh.userData.body = name;
+      if (name === 'saturn') {
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(meta.size * 1.45, meta.size * 2.3, 64),
+          new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 0.55 })
+        );
+        ring.rotation.x = Math.PI / 2 - 0.45;
+        mesh.add(ring);
+      }
+      if (name === 'earth') {
+        const moon = new THREE.Mesh(
+          new THREE.SphereGeometry(0.16, 24, 24),
+          new THREE.MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.9 })
+        );
+        moon.userData.isMoon = true;
+        mesh.add(moon);
+        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: glowTexture('rgba(94,234,212,0.5)', 'rgba(94,234,212,0)'),
+          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+        }));
+        halo.scale.setScalar(2.6);
+        mesh.add(halo);
+      }
+      const label = makeLabel(name[0].toUpperCase() + name.slice(1), 'planet');
+      mesh.add(label);
+      mesh.userData.label = label;
+      this.scene.add(mesh);
+      this.meshes[name] = mesh;
+      this.clickables.push(mesh);
+
+      // Orbit path sampled over one period
+      const elFn = name === 'earth' ? sunElements : ELEMENTS[name];
+      const pts = [];
+      const d0 = Sim.d;
+      const period = { mercury: 88, venus: 225, earth: 365, mars: 687, jupiter: 4333, saturn: 10759, uranus: 30687, neptune: 60190 }[name];
+      for (let k = 0; k <= 256; k++) {
+        const p = orbitalToEcliptic(elFn(d0 + (k / 256) * period));
+        pts.push(eclToScene(p));
+      }
+      const orbit = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: name === 'earth' ? 0x5eead4 : 0x8aa6cc, transparent: true, opacity: 0.75 })
+      );
+      orbit.userData.isOrbit = true;
+      this.orbits[name] = orbit;
+      this.scene.add(orbit);
+    }
+
+    // Click → info card
+    this.renderer.domElement.addEventListener('pointerdown', e => { this._down = [e.clientX, e.clientY]; });
+    this.renderer.domElement.addEventListener('pointerup', e => {
+      if (!this._down || Math.hypot(e.clientX - this._down[0], e.clientY - this._down[1]) > 5) return;
+      const rect = this.renderer.domElement.getBoundingClientRect();
+      const ndc = new THREE.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      this.raycaster.setFromCamera(ndc, this.camera);
+      this.raycaster.params.Points = { threshold: 2 };
+      const hits = this.raycaster.intersectObjects(this.clickables, false);
+      if (hits.length) {
+        const body = hits[0].object.userData.body;
+        showBodyInfo(body, 'orrery-info', () => this.highlightOrbit(null));
+        this.highlightOrbit(this.orbits[body] ? body : null);
+      } else {
+        document.getElementById('orrery-info').classList.remove('open');
+        this.highlightOrbit(null);
+      }
+    });
+
+    buildToggles('orrery-toggles', [
+      { label: 'Orbit paths', get: () => this.showOrbits, set: v => { this.showOrbits = v; this.scene.traverse(o => { if (o.userData.isOrbit) o.visible = v; }); } },
+      { label: 'Labels', get: () => this.showLabels, set: v => { this.showLabels = v; document.getElementById('orrery-labels').style.opacity = v ? 1 : 0; } },
+    ]);
+  },
+
+  highlightOrbit(name) {
+    for (const [n, o] of Object.entries(this.orbits)) {
+      const sel = n === name;
+      o.material.color.set(sel ? PLANET_META[n].color : (n === 'earth' ? 0x5eead4 : 0x8aa6cc));
+      o.material.opacity = sel ? 1 : (name ? 0.3 : 0.75);
+      const label = this.meshes[n].userData.label;
+      if (label) label.element.style.color = sel ? '#' + new THREE.Color(PLANET_META[n].color).getHexString() : '';
+    }
+  },
+
+  update() {
+    const d = Sim.d;
+    for (const name of PLANET_NAMES) {
+      const p = name === 'earth'
+        ? (() => { const s = sunGeo(d); return { x: -s.x, y: -s.y, z: -s.z }; })()
+        : helio(name, d);
+      this.meshes[name].position.copy(eclToScene(p));
+      this.meshes[name].rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, earth: 1, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
+    }
+    // Moon around Earth (exaggerated)
+    const moonMesh = this.meshes.earth.children.find(c => c.userData.isMoon);
+    if (moonMesh) {
+      const m = moonGeo(d);
+      const ang = Math.atan2(m.y, m.x);
+      moonMesh.position.set(Math.cos(ang) * 1.15, m.z / m.r * 0.3, -Math.sin(ang) * 1.15);
+    }
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+    this.labelRenderer.render(this.scene, this.camera);
+  },
+
+  resize() {
+    const host = document.getElementById('orrery-canvas');
+    if (!host.clientWidth) return;
+    this.camera.aspect = host.clientWidth / host.clientHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(host.clientWidth, host.clientHeight);
+    this.labelRenderer.setSize(host.clientWidth, host.clientHeight);
+  },
+};
+
+/* ---------- Info card (shared) ---------- */
+const AU_KM = 149597870.7;
+function showBodyInfo(body, cardId, onClose) {
+  const card = document.getElementById(cardId);
+  const d = Sim.d;
+  let rows = '', title = '', kind = '', fact = '';
+  if (body === 'sun') {
+    title = 'Sun'; kind = 'G-type main-sequence star';
+    const s = sunGeo(d);
+    rows = row('Distance from Earth', (s.r * AU_KM / 1e6).toFixed(1) + ' M km')
+         + row('Diameter', '1,392,700 km') + row('Surface temp', '5,505 °C');
+    fact = 'The Sun holds 99.86% of the mass of the entire solar system.';
+  } else if (body === 'moon') {
+    title = 'Moon'; kind = 'Natural satellite';
+    const m = moonGeo(d);
+    rows = row('Distance from Earth', Math.round(m.r * AU_KM).toLocaleString() + ' km')
+         + row('Diameter', '3,474 km') + row('Orbital period', '27.3 days');
+    fact = 'The Moon drifts about 3.8 cm farther from Earth every year.';
+  } else {
+    const meta = PLANET_META[body];
+    title = body[0].toUpperCase() + body.slice(1);
+    kind = meta.kind;
+    const h = body === 'earth'
+      ? (() => { const s = sunGeo(d); return { x: -s.x, y: -s.y, z: -s.z, r: s.r }; })()
+      : helio(body, d);
+    const s = sunGeo(d);
+    const ge = { x: h.x + s.x, y: h.y + s.y, z: h.z + s.z };
+    const distEarth = Math.sqrt(ge.x ** 2 + ge.y ** 2 + ge.z ** 2);
+    const rh = Math.sqrt(h.x ** 2 + h.y ** 2 + h.z ** 2);
+    rows = row('Distance from Sun', rh.toFixed(3) + ' AU')
+         + (body !== 'earth' ? row('Distance from Earth', distEarth.toFixed(3) + ' AU') : row('Distance from Earth', '0 — you are here'))
+         + row('Diameter', meta.diameter) + row('Day length', meta.day) + row('Year length', meta.year);
+    fact = meta.fact;
+  }
+  card.innerHTML = `<button class="close">×</button><h3>${title}</h3><div class="kind">${kind}</div>${rows}<div class="fact">${fact}</div>`;
+  card.querySelector('.close').onclick = () => { card.classList.remove('open'); if (onClose) onClose(); };
+  card.classList.add('open');
+}
+const row = (k, v) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
+
+function buildToggles(hostId, defs) {
+  const host = document.getElementById(hostId);
+  for (const def of defs) {
+    const b = document.createElement('button');
+    b.className = 'toggle-pill' + (def.get() ? ' on' : '');
+    b.innerHTML = `<span class="led"></span>${def.label}`;
+    b.onclick = () => { def.set(!def.get()); b.classList.toggle('on', def.get()); };
+    host.appendChild(b);
+  }
+}
+
+/* =====================================================================
+   SKY VIEW — planetarium dome from the observer's location
+   Stars live on a celestial sphere in equatorial coordinates; the whole
+   sphere is rotated by latitude + local sidereal time each frame.
+   Scene frame: +Y zenith, −Z north, +X east.
+   ===================================================================== */
+const SKY_R = 500;
+const NAMED_STARS = [
+  ['Sirius',101.29,-16.72],['Canopus',95.99,-52.70],['Arcturus',213.92,19.18],
+  ['Vega',279.23,38.78],['Capella',79.17,46.00],['Rigel',78.63,-8.20],
+  ['Procyon',114.83,5.22],['Betelgeuse',88.79,7.41],['Achernar',24.43,-57.24],
+  ['Altair',297.70,8.87],['Aldebaran',68.98,16.51],['Antares',247.35,-26.43],
+  ['Spica',201.30,-11.16],['Pollux',116.33,28.03],['Fomalhaut',344.41,-29.62],
+  ['Deneb',310.36,45.28],['Regulus',152.09,11.97],['Castor',113.65,31.89],
+  ['Polaris',37.95,89.26],['Mizar',200.98,54.93],['Dubhe',165.93,61.75],
+  ['Alioth',193.51,55.96],['Mirfak',51.08,49.86],['Bellatrix',81.28,6.35],
+];
+// Minimal fallback catalog [raDeg, decDeg, mag] if the CDN fetch fails
+const FALLBACK_STARS = NAMED_STARS.map(([, ra, dec], i) => [ra, dec, i < 16 ? 1.0 : 1.8])
+  .concat([[24.5,-57.2,0.5],[210.96,-60.37,0.6],[186.65,-63.10,0.8],[104.66,-28.97,1.5],
+    [263.40,-37.10,1.6],[81.57,28.61,1.65],[84.05,-1.20,1.7],[85.19,-1.94,1.7],
+    [83.00,-0.30,1.9],[222.68,74.16,2.1],[177.26,14.57,2.1],[168.53,20.52,2.3]]);
+
+const eqToVec = (raRad, decRad, r) => new THREE.Vector3(
+  r * Math.cos(decRad) * Math.cos(raRad),
+  r * Math.cos(decRad) * Math.sin(raRad),
+  r * Math.sin(decRad)
+);
+
+const SKY_BODIES = {
+  sun:     { color: 0xffd27d, size: 30, glow: true },
+  moon:    { color: 0xe8ecf4, size: 22, glow: true },
+  mercury: { color: 0x9c9a92, size: 7 },
+  venus:   { color: 0xfff0c0, size: 11 },
+  mars:    { color: 0xff8a5c, size: 8 },
+  jupiter: { color: 0xffe0b0, size: 10 },
+  saturn:  { color: 0xf0deb0, size: 9 },
+  uranus:  { color: 0x9fd8e0, size: 6 },
+  neptune: { color: 0x7a9be8, size: 6 },
+};
+
+const Sky = {
+  renderer: null, labelRenderer: null, scene: null, camera: null,
+  group: null, starMats: [], lineGroup: null, constLabelGroup: null,
+  starNameGroup: null, bodySprites: {}, ground: null, horizon: null,
+  viewAz: 180 * DEG, viewAlt: 28 * DEG, _labelFade: -1,
+  showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: true,
+
+  init() {
+    const host = document.getElementById('sky-canvas');
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x04060d);
+    this.scene.fog = null;
+    this.camera = new THREE.PerspectiveCamera(60, host.clientWidth / host.clientHeight, 0.1, 3000);
+    this.camera.position.set(0, 2, 0);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setSize(host.clientWidth, host.clientHeight);
+    host.appendChild(this.renderer.domElement);
+    this.labelRenderer = new CSS2DRenderer({ element: document.getElementById('sky-labels') });
+    this.labelRenderer.setSize(host.clientWidth, host.clientHeight);
+
+    this.group = new THREE.Group();                          // the rotating celestial sphere
+    this.scene.add(this.group);
+
+    // Sun / Moon / planets
+    for (const [name, cfg] of Object.entries(SKY_BODIES)) {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: cfg.glow
+          ? glowTexture(`#${cfg.color.toString(16).padStart(6, '0')}`, 'rgba(255,200,100,0)')
+          : starSprite,
+        color: cfg.color, transparent: true, depthWrite: false,
+      }));
+      sprite.scale.setScalar(cfg.size);
+      const label = makeLabel(name === 'sun' ? 'Sun' : name === 'moon' ? 'Moon' : name[0].toUpperCase() + name.slice(1), 'planet');
+      sprite.add(label);
+      this.group.add(sprite);
+      this.bodySprites[name] = sprite;
+    }
+
+    // Named-star labels
+    this.starNameGroup = new THREE.Group();
+    for (const [name, ra, dec] of NAMED_STARS) {
+      const l = makeLabel(name, 'star-name');
+      l.position.copy(eqToVec(ra * DEG, dec * DEG, SKY_R * 0.985));
+      this.starNameGroup.add(l);
+    }
+    this.group.add(this.starNameGroup);
+
+    // Ground + horizon (fixed — not part of the rotating sphere)
+    this.ground = new THREE.Mesh(
+      new THREE.CircleGeometry(SKY_R * 1.6, 72),
+      new THREE.MeshBasicMaterial({ color: 0x070b14 })
+    );
+    this.ground.rotation.x = -Math.PI / 2;
+    this.ground.position.y = -1.5;
+    this.scene.add(this.ground);
+
+    const ringPts = [];
+    for (let k = 0; k <= 144; k++) {
+      const a = (k / 144) * Math.PI * 2;
+      ringPts.push(new THREE.Vector3(Math.sin(a) * (SKY_R - 4), 0, Math.cos(a) * (SKY_R - 4)));
+    }
+    this.horizon = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(ringPts),
+      new THREE.LineBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0.4 })
+    );
+    this.scene.add(this.horizon);
+
+    for (const [txt, x, z] of [['N', 0, -1], ['S', 0, 1], ['E', 1, 0], ['W', -1, 0]]) {
+      const l = makeLabel(txt, 'planet');
+      l.element.style.fontSize = '13px';
+      l.element.style.color = 'rgba(94,234,212,0.8)';
+      l.position.set(x * (SKY_R - 12), 6, z * (SKY_R - 12));
+      this.scene.add(l);
+    }
+
+    // Look-around controls
+    const el = this.renderer.domElement;
+    let dragging = false, px = 0, py = 0;
+    el.addEventListener('pointerdown', e => { dragging = true; px = e.clientX; py = e.clientY; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointermove', e => {
+      if (!dragging) return;
+      const k = this.camera.fov / 600;
+      this.viewAz -= (e.clientX - px) * k * DEG * 1.6;
+      this.viewAlt += (e.clientY - py) * k * DEG * 1.6;
+      this.viewAlt = Math.max(-0.35, Math.min(Math.PI / 2 - 0.01, this.viewAlt));
+      px = e.clientX; py = e.clientY;
+    });
+    el.addEventListener('pointerup', () => dragging = false);
+    el.addEventListener('wheel', e => {
+      e.preventDefault();
+      this.camera.fov = Math.max(20, Math.min(95, this.camera.fov + e.deltaY * 0.04));
+      this.camera.updateProjectionMatrix();
+    }, { passive: false });
+
+    buildToggles('sky-toggles', [
+      { label: 'Constellations', get: () => this.showConst, set: v => { this.showConst = v; if (this.lineGroup) this.lineGroup.visible = v; } },
+      { label: 'Constellation names', get: () => this.showConstNames, set: v => { this.showConstNames = v; if (this.constLabelGroup) this.constLabelGroup.visible = v; } },
+      { label: 'Star names', get: () => this.showStarNames, set: v => { this.showStarNames = v; this.starNameGroup.visible = v; } },
+      { label: 'Ground', get: () => this.showGround, set: v => { this.showGround = v; this.ground.visible = v; } },
+      { label: 'Atmosphere', get: () => this.atmosphere, set: v => { this.atmosphere = v; } },
+    ]);
+
+    this.loadCatalog();
+  },
+
+  addStars(list) {                                           // list: [raDeg, decDeg, mag, bv?]
+    const bins = [
+      { max: 1.0, size: 11, op: 1.0 }, { max: 2.0, size: 8, op: 0.95 },
+      { max: 3.0, size: 6, op: 0.88 }, { max: 4.0, size: 4.4, op: 0.75 },
+      { max: 5.0, size: 3.2, op: 0.6 }, { max: 99, size: 2.2, op: 0.42 },
+    ].map(b => ({ ...b, pos: [], col: [] }));
+    for (const [ra, dec, mag, bv] of list) {
+      const bin = bins.find(b => mag <= b.max);
+      const v = eqToVec(ra * DEG, dec * DEG, SKY_R);
+      bin.pos.push(v.x, v.y, v.z);
+      const c = new THREE.Color(bvToColor(bv));
+      bin.col.push(c.r, c.g, c.b);
+    }
+    for (const b of bins) {
+      if (!b.pos.length) continue;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(b.pos, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(b.col, 3));
+      const mat = new THREE.PointsMaterial({
+        size: b.size, map: starSprite, vertexColors: true, transparent: true,
+        opacity: b.op, sizeAttenuation: false, depthWrite: false,
+      });
+      mat.userData.baseOpacity = b.op;
+      this.starMats.push(mat);
+      this.group.add(new THREE.Points(geo, mat));
+    }
+  },
+
+  async loadCatalog() {
+    const base = 'https://cdn.jsdelivr.net/gh/ofrohn/d3-celestial@master/data/';
+    const lonToRa = lon => (lon < 0 ? lon + 360 : lon);
+    try {
+      const stars = await (await fetch(base + 'stars.6.json')).json();
+      const list = [];
+      for (const f of stars.features) {
+        const [lon, lat] = f.geometry.coordinates;
+        list.push([lonToRa(lon), lat, f.properties.mag, parseFloat(f.properties.bv)]);
+      }
+      this.addStars(list);
+    } catch (err) {
+      console.warn('Star catalog fetch failed, using fallback set', err);
+      this.addStars(FALLBACK_STARS);
+    }
+    try {
+      const lines = await (await fetch(base + 'constellations.lines.json')).json();
+      this.lineGroup = new THREE.Group();
+      const pts = [];
+      for (const f of lines.features) {
+        for (const line of f.geometry.coordinates) {
+          for (let k = 0; k < line.length - 1; k++) {
+            // subdivide so long segments hug the sphere
+            const a = line[k], b = line[k + 1];
+            let dLon = b[0] - a[0];
+            if (dLon > 180) dLon -= 360;
+            if (dLon < -180) dLon += 360;
+            const steps = Math.max(1, Math.ceil(Math.max(Math.abs(dLon), Math.abs(b[1] - a[1])) / 5));
+            for (let s = 0; s < steps; s++) {
+              const t0 = s / steps, t1 = (s + 1) / steps;
+              pts.push(
+                eqToVec(lonToRa(a[0] + dLon * t0) * DEG, (a[1] + (b[1] - a[1]) * t0) * DEG, SKY_R * 0.995),
+                eqToVec(lonToRa(a[0] + dLon * t1) * DEG, (a[1] + (b[1] - a[1]) * t1) * DEG, SKY_R * 0.995)
+              );
+            }
+          }
+        }
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      this.lineGroup.add(new THREE.LineSegments(geo,
+        new THREE.LineBasicMaterial({ color: 0x7da0e0, transparent: true, opacity: 0.55 })));
+      this.lineGroup.visible = this.showConst;
+      this.group.add(this.lineGroup);
+    } catch (err) { console.warn('Constellation lines unavailable', err); }
+    try {
+      const cons = await (await fetch(base + 'constellations.json')).json();
+      this.constLabelGroup = new THREE.Group();
+      for (const f of cons.features) {
+        const name = f.properties && (f.properties.name || f.properties.n);
+        if (!name || !f.geometry) continue;
+        const [lon, lat] = f.geometry.coordinates;
+        const l = makeLabel(name, 'const-name');
+        l.position.copy(eqToVec(lonToRa(lon) * DEG, lat * DEG, SKY_R * 0.96));
+        this.constLabelGroup.add(l);
+      }
+      this.constLabelGroup.visible = this.showConstNames;
+      this.group.add(this.constLabelGroup);
+    } catch (err) { console.warn('Constellation names unavailable', err); }
+  },
+
+  update() {
+    const jd = Sim.jd, d = Sim.d;
+    const phi = Loc.lat * DEG;
+    const lst = lstRad(jd, Loc.lon);
+
+    // Equatorial → horizon rotation: images of the equatorial basis vectors
+    const cL = Math.cos(lst), sL = Math.sin(lst), cP = Math.cos(phi), sP = Math.sin(phi);
+    const m = new THREE.Matrix4().makeBasis(
+      new THREE.Vector3(-sL, cP * cL, sP * cL),
+      new THREE.Vector3(cL, cP * sL, sP * sL),
+      new THREE.Vector3(0, sP, -cP)
+    );
+    this.group.setRotationFromMatrix(m);
+
+    // Solar-system bodies on the sphere
+    for (const name of Object.keys(SKY_BODIES)) {
+      const eq = bodyEquatorial(name, d);
+      this.bodySprites[name].position.copy(eqToVec(eq.ra, eq.dec, SKY_R * 0.97));
+    }
+
+    // Atmosphere tint + star fading by sun altitude
+    const alt = this.atmosphere ? sunAltitude(jd, Loc.lat, Loc.lon) : -90;
+    let bg, starFade;
+    if (alt <= -14) { bg = new THREE.Color(0x04060d); starFade = 1; }
+    else if (alt <= -6) {
+      const t = (alt + 14) / 8;
+      bg = new THREE.Color(0x04060d).lerp(new THREE.Color(0x0d1c3a), t);
+      starFade = 1 - t * 0.35;
+    } else if (alt <= 0) {
+      const t = (alt + 6) / 6;
+      bg = new THREE.Color(0x0d1c3a).lerp(new THREE.Color(0x3a5a96), t);
+      starFade = 0.65 - t * 0.5;
+    } else {
+      const t = Math.min(1, alt / 12);
+      bg = new THREE.Color(0x3a5a96).lerp(new THREE.Color(0x6d9bd4), t);
+      starFade = 0.12;
+    }
+    this.scene.background = bg;
+    for (const mat of this.starMats) mat.opacity = mat.userData.baseOpacity * starFade;
+    if (this.lineGroup) this.lineGroup.children[0].material.opacity = 0.55 * starFade;
+    if (Math.abs(starFade - this._labelFade) > 0.02) {       // fade name labels with daylight
+      this._labelFade = starFade;
+      for (const grp of [this.starNameGroup, this.constLabelGroup]) {
+        if (grp) for (const l of grp.children) l.element.style.opacity = starFade;
+      }
+    }
+
+    // Camera orientation from az/alt
+    const ca = Math.cos(this.viewAlt);
+    this.camera.lookAt(
+      Math.sin(this.viewAz) * ca * 100,
+      Math.sin(this.viewAlt) * 100 + 2,
+      -Math.cos(this.viewAz) * ca * 100
+    );
+    this.renderer.render(this.scene, this.camera);
+    this.labelRenderer.render(this.scene, this.camera);
+  },
+
+  resize() {
+    const host = document.getElementById('sky-canvas');
+    if (!host.clientWidth) return;
+    this.camera.aspect = host.clientWidth / host.clientHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(host.clientWidth, host.clientHeight);
+    this.labelRenderer.setSize(host.clientWidth, host.clientHeight);
+  },
+};
+
+/* =====================================================================
+   TELESCOPE FEEDS
+   Public-domain NASA imagery (auto-refreshing), live streams (lazy-
+   loaded embeds), and curated links to free observatory feeds.
+   ===================================================================== */
+const FEEDS = [
+  {
+    type: 'embed', wide: true, tag: 'live', title: 'NASA TV — Public Channel',
+    desc: 'NASA’s round-the-clock public broadcast: launches, ISS spacewalks, mission coverage and Earth views from orbit.',
+    src: 'https://www.youtube.com/embed/live_stream?channel=UCLA_DiR1FfKNvjuUpBHmylQ&autoplay=1',
+    link: 'https://www.youtube.com/@NASA/streams',
+  },
+  {
+    type: 'img', tag: 'auto', title: 'Sun — SDO AIA 193 Å', refresh: 300,
+    desc: 'The solar corona at ~1.2 million °C, imaged by NASA’s Solar Dynamics Observatory. Refreshes every 5 minutes.',
+    src: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_0193.jpg',
+    link: 'https://sdo.gsfc.nasa.gov/data/',
+  },
+  {
+    type: 'img', tag: 'auto', title: 'Sun — SDO HMI Visible', refresh: 300,
+    desc: 'The Sun as your eyes would (never safely) see it — sunspots and all, in visible light from SDO.',
+    src: 'https://sdo.gsfc.nasa.gov/assets/img/latest/latest_512_HMIIC.jpg',
+    link: 'https://sdo.gsfc.nasa.gov/data/',
+  },
+  {
+    type: 'img', tag: 'auto', title: 'Solar Wind — SOHO LASCO C3', refresh: 600,
+    desc: 'Coronagraph view of the space around the Sun: solar storms, comets and the solar wind, from the SOHO observatory.',
+    src: 'https://soho.nascom.nasa.gov/data/realtime/c3/512/latest.jpg',
+    link: 'https://soho.nascom.nasa.gov/data/realtime-images.html',
+  },
+  { type: 'apod', tag: 'daily', title: 'Astronomy Picture of the Day' },
+  {
+    type: 'link', tag: 'ext', title: 'Virtual Telescope Project',
+    desc: 'Free live deep-sky sessions from robotic telescopes in Italy — asteroid flybys, eclipses, comets. Check the schedule for the next broadcast.',
+    link: 'https://www.virtualtelescope.eu/webtv/',
+  },
+  {
+    type: 'link', tag: 'ext', title: 'Lowell Observatory',
+    desc: 'The observatory that found Pluto runs regular live telescope nights on YouTube, with astronomers narrating the view.',
+    link: 'https://www.youtube.com/@LowellObservatory/streams',
+  },
+  {
+    type: 'link', tag: 'ext', title: 'Subaru-Asahi Star Camera',
+    desc: 'A serene live night-sky camera atop Mauna Kea, Hawaii (4,200 m) — shooting stars most nights, occasionally aurora.',
+    link: 'https://www.youtube.com/results?search_query=subaru+asahi+star+camera+live',
+  },
+  {
+    type: 'link', tag: 'ext', title: 'ESA/Webb & Hubble Galleries',
+    desc: 'Freshly processed deep-space imagery from the James Webb and Hubble space telescopes, free to browse and download.',
+    link: 'https://esawebb.org/images/',
+  },
+];
+
+function buildFeeds() {
+  const grid = document.getElementById('feed-grid');
+  for (const f of FEEDS) {
+    const card = document.createElement('div');
+    card.className = 'feed-card' + (f.wide ? ' wide' : '');
+    const tagLabel = { live: '● Live', auto: 'Auto-refresh', daily: 'Daily', ext: 'External' }[f.tag];
+    let media = '';
+    if (f.type === 'embed') media = `<div class="play-cta"><div class="ring">▶</div></div>`;
+    if (f.type === 'img') media = `<img loading="lazy" src="${f.src}" alt="${f.title}">`;
+    card.innerHTML = `
+      <div class="feed-media">${media}</div>
+      <div class="feed-body">
+        <div class="feed-meta"><h3>${f.title}</h3><span class="feed-tag ${f.tag}">${tagLabel}</span></div>
+        <p>${f.desc || ''}</p>
+        <div class="feed-actions">${f.link ? `<a class="feed-link" href="${f.link}" target="_blank" rel="noopener">Open source ↗</a>` : ''}</div>
+      </div>`;
+    if (f.type === 'embed') {
+      card.querySelector('.play-cta').addEventListener('click', ev => {
+        ev.currentTarget.parentElement.innerHTML = `<iframe src="${f.src}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen></iframe>`;
+      });
+    }
+    if (f.type === 'img' && f.refresh) {
+      const img = card.querySelector('img');
+      setInterval(() => { img.src = f.src + '?t=' + Date.now(); }, f.refresh * 1000);
+    }
+    if (f.type === 'apod') loadApod(card);
+    grid.appendChild(card);
+  }
+}
+
+async function loadApod(card) {
+  const body = card.querySelector('.feed-body p');
+  body.textContent = 'Fetching today’s image from NASA…';
+  try {
+    const r = await fetch('https://api.nasa.gov/planetary/apod?api_key=DEMO_KEY&thumbs=true');
+    if (!r.ok) throw new Error('APOD HTTP ' + r.status);
+    const a = await r.json();
+    const imgUrl = a.media_type === 'image' ? a.url : a.thumbnail_url;
+    if (imgUrl) card.querySelector('.feed-media').innerHTML = `<img src="${imgUrl}" alt="${a.title}">`;
+    body.innerHTML = `<b style="color:var(--text)">${a.title}</b> — ${(a.explanation || '').slice(0, 180)}…<br><span class="apod-caption">${a.date}${a.copyright ? ' · © ' + a.copyright.trim() : ' · Public domain'}</span>`;
+    card.querySelector('.feed-actions').innerHTML = `<a class="feed-link" href="https://apod.nasa.gov/apod/astropix.html" target="_blank" rel="noopener">View on APOD ↗</a>`;
+  } catch (err) {
+    body.textContent = 'APOD is rate-limited right now — tap through to the site instead.';
+    card.querySelector('.feed-actions').innerHTML = `<a class="feed-link" href="https://apod.nasa.gov/apod/astropix.html" target="_blank" rel="noopener">Open APOD ↗</a>`;
+  }
+}
+
+/* =====================================================================
+   UI WIRING + MAIN LOOP
+   ===================================================================== */
+let activeView = 'orrery';
+document.getElementById('tabs').addEventListener('click', e => {
+  const btn = e.target.closest('button[data-view]');
+  if (!btn) return;
+  activeView = btn.dataset.view;
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('active', b === btn));
+  document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + activeView));
+  document.getElementById('time-bar').style.display = activeView === 'feeds' ? 'none' : 'flex';
+  if (activeView === 'orrery') Orrery.resize();
+  if (activeView === 'sky') Sky.resize();
+});
+
+/* ---- Time controls ---- */
+const speedEl = document.getElementById('t-speed');
+const playEl = document.getElementById('t-play');
+function refreshSpeedUI() {
+  speedEl.textContent = Sim.paused ? 'paused' : SPEEDS[Sim.speedIdx].label;
+  playEl.textContent = Sim.paused ? '▶' : '⏸';
+  playEl.classList.toggle('on', Sim.paused);
+}
+document.getElementById('t-faster').onclick = () => { Sim.speedIdx = Math.min(SPEEDS.length - 1, Sim.speedIdx + 1); Sim.paused = false; refreshSpeedUI(); };
+document.getElementById('t-slower').onclick = () => { Sim.speedIdx = Math.max(0, Sim.speedIdx - 1); Sim.paused = false; refreshSpeedUI(); };
+playEl.onclick = () => { Sim.paused = !Sim.paused; refreshSpeedUI(); };
+document.getElementById('t-now').onclick = () => {
+  Sim.ms = Date.now();
+  Sim.speedIdx = 3; Sim.paused = false;
+  refreshSpeedUI();
+};
+document.getElementById('t-set').onclick = () => {
+  const v = document.getElementById('t-date').value;
+  if (!v) return;
+  const t = new Date(v).getTime();
+  if (!isNaN(t)) { Sim.ms = t; Sim.paused = true; refreshSpeedUI(); }
+};
+
+const pad = n => String(n).padStart(2, '0');
+function fmtSim(dt) {
+  return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+}
+let lastClockUpdate = 0;
+function updateClocks(now) {
+  if (now - lastClockUpdate < 250) return;
+  lastClockUpdate = now;
+  const sim = Sim.date;
+  document.getElementById('t-clock').innerHTML = `<span class="dim">SIM</span> ${fmtSim(sim)}`;
+  const lst = lstRad(Sim.jd, Loc.lon) / DEG / 15;
+  const lh = Math.floor(lst), lm = Math.floor((lst - lh) * 60);
+  document.getElementById('clock-label').innerHTML =
+    `${fmtSim(new Date())} <span style="color:var(--text-dim)">·</span> LST ${pad(lh)}:${pad(lm)}`;
+}
+
+/* ---- Location modal ---- */
+const locModal = document.getElementById('loc-modal');
+function openLocModal() {
+  document.getElementById('loc-name').value = Loc.name;
+  document.getElementById('loc-lat').value = Loc.lat;
+  document.getElementById('loc-lon').value = Loc.lon;
+  document.getElementById('geo-status').textContent = '';
+  locModal.classList.add('open');
+}
+document.getElementById('chip-location').onclick = openLocModal;
+locModal.addEventListener('click', e => { if (e.target === locModal) locModal.classList.remove('open'); });
+document.getElementById('loc-geo').onclick = () => {
+  const status = document.getElementById('geo-status');
+  if (!navigator.geolocation) { status.textContent = 'Geolocation unavailable in this browser.'; return; }
+  status.textContent = 'Locating…';
+  navigator.geolocation.getCurrentPosition(
+    pos => {
+      document.getElementById('loc-lat').value = pos.coords.latitude.toFixed(4);
+      document.getElementById('loc-lon').value = pos.coords.longitude.toFixed(4);
+      if (!document.getElementById('loc-name').value.trim()) document.getElementById('loc-name').value = 'Home';
+      status.textContent = 'Got it — accurate to ~' + Math.round(pos.coords.accuracy) + ' m.';
+    },
+    err => { status.textContent = 'Could not get location: ' + err.message; },
+    { timeout: 12000 }
+  );
+};
+document.getElementById('loc-save').onclick = () => {
+  const lat = parseFloat(document.getElementById('loc-lat').value);
+  const lon = parseFloat(document.getElementById('loc-lon').value);
+  if (isNaN(lat) || isNaN(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
+    document.getElementById('geo-status').textContent = 'Latitude/longitude out of range.';
+    return;
+  }
+  saveLoc({ name: document.getElementById('loc-name').value.trim() || 'Home', lat, lon });
+  locModal.classList.remove('open');
+};
+
+/* ---- Boot ---- */
+refreshLocChip();
+buildFeeds();
+Orrery.init();
+Sky.init();
+refreshSpeedUI();
+{
+  const dt = new Date();
+  document.getElementById('t-date').value =
+    `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+}
+window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
+
+function loop(now) {
+  Sim.tick();
+  if (activeView === 'orrery') Orrery.update();
+  else if (activeView === 'sky') Sky.update();
+  updateClocks(now || performance.now());
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+setTimeout(() => document.getElementById('loader').classList.add('done'), 700);
+if (!localStorage.getItem('astrodeck.location')) {
+  document.getElementById('loader-text').textContent = 'Set your observing location…';
+  setTimeout(openLocModal, 1100);
+}
+</script>
+</body>
+</html>
