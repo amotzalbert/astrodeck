@@ -802,7 +802,7 @@
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
-          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, magnetic fields, the gravity grid, and a sun brightness slider.</span></div>
+          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, and a sun brightness slider.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
         </div>
       </div>
@@ -1311,7 +1311,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true,
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1393,6 +1393,7 @@ const Orrery = {
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = Math.PI / 2 - 0.45;
         mesh.add(ring);
+        this.saturnRing = ring;
       }
       const systemMoons = Object.entries(MOONS).filter(([, m]) => m.planet === name);
       if (systemMoons.length) {
@@ -1487,7 +1488,8 @@ const Orrery = {
       );
       this.raycaster.setFromCamera(ndc, this.camera);
       this.raycaster.params.Points = { threshold: 2 };
-      const hits = this.raycaster.intersectObjects(this.clickables, false);
+      const hits = this.raycaster.intersectObjects(this.clickables, false)
+        .filter(h => h.object.visible);                        // hidden moons/ISS shouldn't catch clicks
       if (hits.length) {
         const body = hits[0].object.userData.body;
         showBodyInfo(body, 'orrery-info', () => { this.highlightOrbit(null); this.setFocus(null); });
@@ -1506,6 +1508,17 @@ const Orrery = {
       { label: 'ISS', get: () => this.showISS, set: v => {
           this.showISS = v;
           if (!v && this.focusBody === 'iss') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
+        } },
+      { label: 'Moons & rings', get: () => this.showMoons, set: v => {
+          this.showMoons = v;                                  // Earth's Moon stays — it's family
+          for (const m of Object.values(this.moonMeshes)) m.visible = v;
+          this.saturnRing.visible = v;
+          if (!v && MOONS[this.focusBody]) {                   // focused moon vanished → step up to its planet
+            this.setFocus(MOONS[this.focusBody].planet);
+            document.getElementById('orrery-info').classList.remove('open');
+          } else {
+            this.setFocus(this.focusBody);                     // re-apply moon-label visibility
+          }
         } },
       { label: 'Mag fields', get: () => this.showMag, set: v => {
           this.showMag = v;
@@ -1794,7 +1807,7 @@ const Orrery = {
     // moon labels show when their system (or one of its moons) is in focus
     const system = MOONS[body]?.planet || (body === 'moon' ? 'earth' : body);
     for (const [mname, mdef] of Object.entries(MOONS)) {
-      this.moonMeshes[mname].userData.label.visible = mdef.planet === system;
+      this.moonMeshes[mname].userData.label.visible = this.showMoons && mdef.planet === system;
     }
     if (this.earthMoonLabel) this.earthMoonLabel.visible = system === 'earth';
     if (this.issDot) this.issDot.userData.label.visible = system === 'earth';
