@@ -810,6 +810,7 @@
         <div class="help-rows">
           <div class="help-row"><span class="icon">🖱</span><span><kbd>Drag</kbd> to look around the sky · <kbd>Scroll</kbd> to zoom in/out.</span></div>
           <div class="help-row"><span class="icon">🎯</span><span><strong>Focus on…</strong> dropdown — pick any planet, Moon, or ISS and the view glides to track it. Live altitude ↑↓ markers show what's above/below the horizon.</span></div>
+          <div class="help-row"><span class="icon">🌒</span><span>The <strong>Moon shows its real phase</strong> — crescent to full, lit from the Sun's true sky direction, with faint earthshine on the dark side.</span></div>
           <div class="help-row"><span class="icon">✨</span><span><strong>Tonight</strong> panel — scans the coming dark window and lists every naked-eye planet + Moon: visible hours, peak altitude, compass direction. Tap any row to track it.</span></div>
           <div class="help-row"><span class="icon">🛰️</span><span><strong>ISS pass alert</strong> — a banner appears only on nights with a genuinely visible pass (station &gt;10°, sky dark, station sunlit). "Show me" jumps to the pass and tracks it.</span></div>
           <div class="help-row"><span class="icon">🧭</span><span>Live <strong>compass</strong> (bottom-left) shows your heading. Click it to snap back to North.</span></div>
@@ -1833,17 +1834,32 @@ const Sky = {
 
     // Sun / Moon / planets
     for (const [name, cfg] of Object.entries(SKY_BODIES)) {
-      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: cfg.glow
-          ? glowTexture(`#${cfg.color.toString(16).padStart(6, '0')}`, 'rgba(255,200,100,0)')
-          : starSprite,
-        color: cfg.color, transparent: true, depthWrite: false,
-      }));
-      sprite.scale.setScalar(cfg.size);
+      let body;
+      if (name === 'moon') {
+        // Real phase: textured sphere lit by parallel "sunlight" from the Sun's sky direction.
+        // Crescent shape, terminator and bright-limb orientation all fall out of the geometry.
+        body = new THREE.Mesh(
+          new THREE.SphereGeometry(cfg.size / 2, 48, 48),
+          new THREE.MeshLambertMaterial({ color: cfg.color })
+        );
+        applyTexture(body.material, TEXTURES.moon);
+        this.moonLight = new THREE.DirectionalLight(0xffffff, 5.5);
+        this.moonLight.target.position.set(0, 0, 0);          // rays aimed at the observer ≈ sun at infinity
+        this.group.add(this.moonLight, this.moonLight.target);
+        this.group.add(new THREE.AmbientLight(0x44495c, 0.32)); // earthshine on the dark side
+      } else {
+        body = new THREE.Sprite(new THREE.SpriteMaterial({
+          map: cfg.glow
+            ? glowTexture(`#${cfg.color.toString(16).padStart(6, '0')}`, 'rgba(255,200,100,0)')
+            : starSprite,
+          color: cfg.color, transparent: true, depthWrite: false,
+        }));
+        body.scale.setScalar(cfg.size);
+      }
       const label = makeLabel(name === 'sun' ? 'Sun' : name === 'moon' ? 'Moon' : name[0].toUpperCase() + name.slice(1), 'planet');
-      sprite.add(label);
-      this.group.add(sprite);
-      this.bodySprites[name] = sprite;
+      body.add(label);
+      this.group.add(body);
+      this.bodySprites[name] = body;
     }
 
     // Named-star labels
@@ -2201,6 +2217,7 @@ const Sky = {
         this.bodySprites[name].position.copy(eqToVec(eq.ra, eq.dec, SKY_R * 0.97));
       }
     }
+    this.moonLight.position.copy(this.bodySprites.sun.position);  // phase light follows the real Sun
 
     this.updateISS();
 

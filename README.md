@@ -22,6 +22,7 @@ A single-file, real-time 3D night-sky app. No build, no install, no account — 
 - The sky **exactly as seen from your location** — geolocation or manual entry, saved locally, with a default **facing direction** (N/NE/…/NW)
 - ~3,500 real stars (d3-celestial catalog, color-coded by temperature), all 88 constellations with lines & names, named bright stars
 - Sun, Moon and planets plotted live; **Moon accurate to ~1 arcminute** (full perturbation series + topocentric parallax, verified vs JPL Horizons)
+- **Moon rendered with its real phase** — textured sphere lit from the Sun's true sky direction: crescent, terminator and bright-limb orientation are physical, with faint earthshine (illuminated fraction verified vs Horizons to 0.2%)
 - **ISS as a live sky object** — appears when above your horizon, trackable
 - **✨ Tonight panel** — scans the coming night and lists each naked-eye planet + Moon (% illuminated): visible hours, peak altitude, compass direction; tap to track
 - **🛰️ ISS pass alert** — a banner appears *only* on nights with a genuinely visible pass (station above 10°, sky dark, station sunlit — Earth-shadow modeled); "Show me" jumps to the pass and tracks it
