@@ -800,7 +800,7 @@
           <div class="help-row"><span class="icon">🔭</span><span><strong>Click any body</strong> — planet, moon, or ISS — to focus the camera on it and see a live info card with distances, orbital data, and facts. The camera rides along as it moves.</span></div>
           <div class="help-row"><span class="icon">🛸</span><span>The <strong>ISS</strong> is a live 3D model: SGP4-propagated from today's TLE. Its solar arrays track the Sun in real time. Click it for ground track and pass info.</span></div>
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
-          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, and a sun brightness slider.</span></div>
+          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, and a sun brightness slider.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
         </div>
       </div>
@@ -1247,6 +1247,11 @@ function maybeShowPassBanner() {
     Sim.speedIdx = 3; Sim.paused = false;
     document.getElementById('t-play').textContent = '⏸';
     document.querySelector('#tabs button[data-view="sky"]').click();
+    if (!Sky.showISS) {                                      // user hid the ISS — flip its pill back on
+      const pill = [...document.querySelectorAll('#sky-toggles .toggle-pill')]
+        .find(b => b.textContent.trim() === 'ISS');
+      if (pill) pill.click(); else Sky.showISS = true;
+    }
     Sky._focusSel.value = 'iss';
     Sky._focusSel.dispatchEvent(new Event('change'));
   };
@@ -1285,7 +1290,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true,
+  showOrbits: true, showLabels: true, showISS: true,
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1477,6 +1482,10 @@ const Orrery = {
     buildToggles('orrery-toggles', [
       { label: 'Orbit paths', get: () => this.showOrbits, set: v => { this.showOrbits = v; this.scene.traverse(o => { if (o.userData.isOrbit) o.visible = v; }); } },
       { label: 'Labels', get: () => this.showLabels, set: v => { this.showLabels = v; document.getElementById('orrery-labels').style.opacity = v ? 1 : 0; } },
+      { label: 'ISS', get: () => this.showISS, set: v => {
+          this.showISS = v;
+          if (!v && this.focusBody === 'iss') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
+        } },
     ]);
 
     // Sun light dimmer
@@ -1568,9 +1577,10 @@ const Orrery = {
   updateISS(d) {
     if (!this.issDot) return;
     const pv = issState(Sim.date);
-    this.issDot.visible = !!pv;
-    this.issOrbit.visible = !!pv && this.showOrbits;
-    if (!pv) return;
+    const show = this.showISS && !!pv;
+    this.issDot.visible = show;
+    this.issOrbit.visible = show && this.showOrbits;
+    if (!show) return;
     const eps = obliquity(d);
     const disp = PLANET_META.earth.size * 1.38;
     this._eciToScene(pv.position, eps, _tmpV).normalize().multiplyScalar(disp);
@@ -1813,7 +1823,7 @@ const Sky = {
   group: null, starMats: [], lineGroup: null, constLabelGroup: null,
   starNameGroup: null, bodySprites: {}, ground: null, horizon: null,
   viewAz: (Loc.heading ?? 90) * DEG, viewAlt: 28 * DEG, _labelFade: -1,
-  showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: false,
+  showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: false, showISS: true,
 
   init() {
     const host = document.getElementById('sky-canvas');
@@ -1991,6 +2001,12 @@ const Sky = {
       { label: 'Star names', get: () => this.showStarNames, set: v => { this.showStarNames = v; this.starNameGroup.visible = v; } },
       { label: 'Ground', get: () => this.showGround, set: v => { this.showGround = v; this.ground.visible = v; } },
       { label: 'Atmosphere', get: () => this.atmosphere, set: v => { this.atmosphere = v; } },
+      { label: 'ISS', get: () => this.showISS, set: v => {
+          this.showISS = v;
+          const opt = this._focusSel.querySelector('option[value="iss"]');
+          if (opt) opt.hidden = !v;
+          if (!v && this.followBody === 'iss') { this._clearFollow(); this._focusSel.value = ''; }
+        } },
     ]);
 
     this.loadCatalog();
@@ -2154,6 +2170,7 @@ const Sky = {
 
   updateISS() {
     if (!this.issSprite) return;
+    if (!this.showISS) { this.issSprite.visible = false; this._issAltAz = null; return; }
     const pv = issState(Sim.date);
     if (!pv) { this.issSprite.visible = false; this._issAltAz = null; return; }
     const gmst = satellite.gstime(Sim.date);
