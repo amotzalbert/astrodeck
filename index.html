@@ -477,6 +477,32 @@
   .feed-link:hover { text-decoration: underline; }
   .apod-caption { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
 
+  /* ---------- ISS pass banner ---------- */
+  .pass-banner {
+    position: fixed; top: 68px; left: 50%; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 12px;
+    max-width: min(560px, calc(100vw - 20px));
+    background: var(--panel);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(140, 250, 255, 0.35);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    z-index: 60;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 24px rgba(140,250,255,0.12);
+    animation: bannerIn .45s ease;
+  }
+  @keyframes bannerIn { from { transform: translate(-50%, -16px); opacity: 0; } }
+  .pass-banner .ico { font-size: 20px; }
+  .pass-banner .txt { font-size: 12px; line-height: 1.45; color: var(--text-dim); }
+  .pass-banner .txt b { color: #8cfaff; font-size: 12.5px; }
+  .pass-banner .text-btn { white-space: nowrap; }
+  .pass-banner .pass-close {
+    background: none; border: 0; cursor: pointer;
+    color: var(--text-dim); font-size: 18px;
+    width: 30px; height: 30px; flex-shrink: 0;
+  }
+  .pass-banner .pass-close:hover { color: var(--text); }
+
   /* ---------- Loading overlay ---------- */
   #loader {
     position: fixed; inset: 0; z-index: 200;
@@ -850,7 +876,13 @@ let Loc = (() => {
     return saved;
   } catch { return DEFAULT_LOC; }
 })();
-function saveLoc(l) { Loc = l; localStorage.setItem('astrodeck.location', JSON.stringify(l)); refreshLocChip(); }
+function saveLoc(l) {
+  Loc = l;
+  localStorage.setItem('astrodeck.location', JSON.stringify(l));
+  refreshLocChip();
+  document.querySelector('.pass-banner')?.remove();          // re-evaluate passes for the new spot
+  if (typeof issReady !== 'undefined' && issReady) maybeShowPassBanner();
+}
 function refreshLocChip() {
   const fmt = (v, pos, neg) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? pos : neg}`;
   const hdg = HEADING_NAMES[Math.round((Loc.heading ?? 90) / 45) % 8];
@@ -984,6 +1016,7 @@ async function initISS() {
     issReady = true;
     Orrery.addISS();
     Sky.addISS();
+    maybeShowPassBanner();
   } catch (err) { console.warn('ISS data unavailable', err); }
 }
 // TEME position/velocity (km) at a date — null when TLE can't be trusted
@@ -993,6 +1026,75 @@ function issState(date) {
   const pv = satellite.propagate(issSatrec, date);
   if (!pv || !pv.position || !isFinite(pv.position.x)) return null;
   return pv;
+}
+
+// Is the ISS in sunlight? (cylindrical Earth-shadow model)
+function issSunlit(posEci, dateMs) {
+  const d = dDays(dateMs / 86400000 + 2440587.5);
+  const eq = bodyEquatorial('sun', d);
+  const sx = Math.cos(eq.dec) * Math.cos(eq.ra), sy = Math.cos(eq.dec) * Math.sin(eq.ra), sz = Math.sin(eq.dec);
+  const dot = posEci.x * sx + posEci.y * sy + posEci.z * sz;
+  if (dot > 0) return true;                                  // sun side of Earth
+  const px = posEci.x - dot * sx, py = posEci.y - dot * sy, pz = posEci.z - dot * sz;
+  return Math.hypot(px, py, pz) > 6371;                      // clear of the shadow cylinder
+}
+
+// Naked-eye visible ISS passes in the next 24 h: ISS up + observer dark + ISS sunlit
+function predictISSPasses() {
+  if (!issReady) return [];
+  const passes = [];
+  const obs = { latitude: Loc.lat * DEG, longitude: Loc.lon * DEG, height: 0.5 };
+  const start = Date.now();
+  let cur = null;
+  for (let t = start; t < start + 24 * 3600000; t += 30000) {
+    const pv = issState(new Date(t));
+    if (!pv) continue;
+    const gmst = satellite.gstime(new Date(t));
+    const la = satellite.ecfToLookAngles(obs, satellite.eciToEcf(pv.position, gmst));
+    const elev = la.elevation / DEG;
+    const visible = elev > 10
+      && sunAltitude(t / 86400000 + 2440587.5, Loc.lat, Loc.lon) < -6
+      && issSunlit(pv.position, t);
+    if (visible) {
+      if (!cur) cur = { start: t, peak: { t, elev, az: la.azimuth / DEG } };
+      cur.end = t;
+      if (elev > cur.peak.elev) cur.peak = { t, elev, az: la.azimuth / DEG };
+    } else if (cur) { passes.push(cur); cur = null; }
+  }
+  if (cur) passes.push(cur);
+  return passes;
+}
+
+// One-per-night banner, only when a decent pass is coming
+function maybeShowPassBanner() {
+  const passes = predictISSPasses().filter(p => p.peak.elev >= 15);
+  if (!passes.length) return;
+  const p = passes[0];
+  const seenKey = new Date(p.start).toDateString() + '|' + Loc.name;
+  if (localStorage.getItem('astrodeck.issPassSeen') === seenKey) return;
+  const fmtT = ms => { const dt = new Date(ms); return `${String(dt.getHours()).padStart(2, '0')}:${String(dt.getMinutes()).padStart(2, '0')}`; };
+  const dur = Math.max(1, Math.round((p.end - p.start) / 60000));
+  const dir = HEADING_NAMES[Math.round(p.peak.az / 45) % 8];
+  const extra = passes.length > 1 ? ` · +${passes.length - 1} more` : '';
+  const el = document.createElement('div');
+  el.className = 'pass-banner';
+  el.innerHTML = `<span class="ico">🛰️</span>
+    <span class="txt"><b>ISS flies over ${Loc.name} tonight</b><br>
+    ${fmtT(p.start)} · peaks ${Math.round(p.peak.elev)}° ${dir} · ~${dur} min visible${extra}</span>
+    <button class="text-btn primary" id="pass-show">Show me</button>
+    <button class="pass-close" id="pass-close">×</button>`;
+  document.body.appendChild(el);
+  const dismiss = () => { localStorage.setItem('astrodeck.issPassSeen', seenKey); el.remove(); };
+  el.querySelector('#pass-close').onclick = dismiss;
+  el.querySelector('#pass-show').onclick = () => {
+    dismiss();
+    Sim.ms = p.start - 30000;                                // arrive just before it rises
+    Sim.speedIdx = 3; Sim.paused = false;
+    document.getElementById('t-play').textContent = '⏸';
+    document.querySelector('#tabs button[data-view="sky"]').click();
+    Sky._focusSel.value = 'iss';
+    Sky._focusSel.dispatchEvent(new Event('change'));
+  };
 }
 
 // Stylized display radius per system: real spacing ratios, compressed to sit near the planet
@@ -2307,7 +2409,7 @@ refreshSpeedUI();
 }
 window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
 
-window.__astro = { Orrery, Sky, Sim, get Loc() { return Loc; } };   // console/debug access
+window.__astro = { Orrery, Sky, Sim, predictISSPasses, get Loc() { return Loc; } };   // console/debug access
 
 function loop(now) {
   Sim.tick();
