@@ -247,6 +247,40 @@
     width: 36px; text-align: right;
   }
 
+  /* ---------- Sky compass ---------- */
+  .compass {
+    position: absolute; left: 16px; bottom: 20px;
+    width: 96px; height: 96px;
+    z-index: 20; cursor: pointer;
+    filter: drop-shadow(0 4px 16px rgba(0,0,0,0.5));
+  }
+  .compass svg { width: 100%; height: 100%; }
+  .compass text {
+    font-family: var(--mono); font-size: 11px; font-weight: 600;
+    fill: rgba(219,228,243,0.85); text-anchor: middle;
+  }
+  .compass text.north { fill: #f87171; }
+  .compass-read {
+    position: absolute; inset: 0;
+    display: grid; place-items: center;
+    font-family: var(--mono); font-size: 10.5px; letter-spacing: 1px;
+    color: var(--accent); pointer-events: none;
+  }
+  .sky-select {
+    width: 100%;
+    appearance: none; cursor: pointer;
+    background: var(--panel);
+    backdrop-filter: blur(12px);
+    border: 1px solid var(--border-soft);
+    border-radius: 10px;
+    color: var(--text);
+    font-family: var(--font); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.8px; text-transform: uppercase;
+    padding: 8px 12px;
+  }
+  .sky-select:focus { outline: none; border-color: rgba(94,234,212,0.45); }
+  .sky-select option { background: var(--panel-solid); color: var(--text); text-transform: none; }
+
   /* ---------- Info card ---------- */
   .info-card {
     position: absolute; top: 14px; left: 14px;
@@ -513,6 +547,24 @@
     <div class="info-card" id="sky-info"></div>
     <div class="hint">Drag to look around · Scroll to zoom · The sky above your home, right now</div>
     <div class="toggle-stack" id="sky-toggles"></div>
+    <div class="compass" id="sky-compass" title="Click to face north">
+      <svg viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="46" fill="rgba(13,19,36,0.78)" stroke="rgba(94,234,212,0.28)" stroke-width="1"/>
+        <polygon points="50,1 45.5,10 54.5,10" fill="#5eead4"/>
+        <g id="compass-rose">
+          <line x1="50" y1="6" x2="50" y2="13" stroke="rgba(248,113,113,0.9)" stroke-width="2" transform="rotate(0 50 50)"/>
+          <line x1="50" y1="6" x2="50" y2="12" stroke="rgba(148,163,184,0.5)" transform="rotate(45 50 50)"/>
+          <line x1="50" y1="6" x2="50" y2="12" stroke="rgba(148,163,184,0.5)" transform="rotate(135 50 50)"/>
+          <line x1="50" y1="6" x2="50" y2="12" stroke="rgba(148,163,184,0.5)" transform="rotate(225 50 50)"/>
+          <line x1="50" y1="6" x2="50" y2="12" stroke="rgba(148,163,184,0.5)" transform="rotate(315 50 50)"/>
+          <text x="50" y="26" class="north">N</text>
+          <text x="78" y="54">E</text>
+          <text x="50" y="86">S</text>
+          <text x="22" y="54">W</text>
+        </g>
+      </svg>
+      <div class="compass-read" id="compass-read"></div>
+    </div>
   </section>
 
   <!-- ============ FEEDS VIEW ============ -->
@@ -1383,7 +1435,7 @@ const Sky = {
     // Look-around controls
     const el = this.renderer.domElement;
     let dragging = false, px = 0, py = 0;
-    el.addEventListener('pointerdown', e => { dragging = true; this._resetTarget = null; px = e.clientX; py = e.clientY; el.setPointerCapture(e.pointerId); });
+    el.addEventListener('pointerdown', e => { dragging = true; this._resetTarget = null; this._clearFollow(); px = e.clientX; py = e.clientY; el.setPointerCapture(e.pointerId); });
     el.addEventListener('pointermove', e => {
       if (!dragging) return;
       const k = this.camera.fov / 600;
@@ -1399,6 +1451,25 @@ const Sky = {
       this.camera.fov = Math.max(20, Math.min(95, this.camera.fov + e.deltaY * 0.04));
       this.camera.updateProjectionMatrix();
     }, { passive: false });
+
+    // Focus dropdown — glide to and track a solar-system body
+    const focusSel = document.createElement('select');
+    focusSel.className = 'sky-select';
+    focusSel.innerHTML = `<option value="">🔭 Focus on…</option>` +
+      Object.keys(SKY_BODIES).map(n =>
+        `<option value="${n}">${n === 'sun' ? 'Sun' : n === 'moon' ? 'Moon' : n[0].toUpperCase() + n.slice(1)}</option>`).join('');
+    focusSel.onchange = () => {
+      this.followBody = focusSel.value || null;
+      if (this.followBody) this._resetTarget = null;
+    };
+    this._focusSel = focusSel;
+    document.getElementById('sky-toggles').appendChild(focusSel);
+
+    // Compass — click to face north
+    document.getElementById('sky-compass').addEventListener('click', () => {
+      this._resetTarget = { az: 0, alt: this.viewAlt, fov: this.camera.fov };
+      this._clearFollow();
+    });
 
     // Reset view button — eases back to the default south-facing POV
     const resetBtn = document.createElement('button');
@@ -1509,6 +1580,19 @@ const Sky = {
   // Ease back to the default POV (saved heading, 28° up, default zoom)
   resetView() {
     this._resetTarget = { az: (Loc.heading ?? 90) * DEG, alt: 28 * DEG, fov: 60 };
+    this._clearFollow();
+  },
+
+  _clearFollow() {
+    this.followBody = null;
+    if (this._focusSel) this._focusSel.value = '';
+  },
+
+  // World-space alt/az of a body sprite (group rotation applied)
+  _bodyAltAz(name) {
+    _tmpV.copy(this.bodySprites[name].position).applyQuaternion(this.group.quaternion);
+    const r = _tmpV.length();
+    return { alt: Math.asin(_tmpV.y / r), az: Math.atan2(_tmpV.x, -_tmpV.z) };
   },
 
   update() {
@@ -1582,6 +1666,36 @@ const Sky = {
       this._labelFade = starFade;
       for (const grp of [this.starNameGroup, this.constLabelGroup]) {
         if (grp) for (const l of grp.children) l.element.style.opacity = starFade;
+      }
+    }
+
+    // Track the followed body — ease the view onto it as the sky turns
+    if (this.followBody) {
+      const t = this._bodyAltAz(this.followBody);
+      let dAz = (t.az - this.viewAz) % (2 * Math.PI);
+      if (dAz > Math.PI) dAz -= 2 * Math.PI;
+      if (dAz < -Math.PI) dAz += 2 * Math.PI;
+      this.viewAz += dAz * 0.1;
+      const targetAlt = Math.max(-0.3, Math.min(Math.PI / 2 - 0.02, t.alt));
+      this.viewAlt += (targetAlt - this.viewAlt) * 0.1;
+    }
+
+    // Live compass
+    {
+      const azDeg = ((this.viewAz / DEG) % 360 + 360) % 360;
+      document.getElementById('compass-rose').setAttribute('transform', `rotate(${-azDeg} 50 50)`);
+      document.getElementById('compass-read').textContent =
+        `${HEADING_NAMES[Math.round(azDeg / 45) % 8]} ${Math.round(azDeg)}°`;
+      // dropdown rise/set markers, throttled
+      const now = performance.now();
+      if (!this._optT || now - this._optT > 1000) {
+        this._optT = now;
+        for (const opt of this._focusSel.options) {
+          if (!opt.value) continue;
+          const a = this._bodyAltAz(opt.value);
+          const base = opt.value === 'sun' ? 'Sun' : opt.value === 'moon' ? 'Moon' : opt.value[0].toUpperCase() + opt.value.slice(1);
+          opt.textContent = `${base} ${a.alt >= 0 ? '↑' : '↓'} ${Math.round(a.alt / DEG)}°`;
+        }
       }
     }
 
