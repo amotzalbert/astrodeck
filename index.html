@@ -500,6 +500,8 @@
     .toggle-stack { top: 8px; right: 8px; }
     .toggle-pill { padding: 7px 9px; font-size: 9.5px; }
     .info-card { top: 8px; left: 8px; width: 240px; }
+    .compass { bottom: 160px; left: 10px; width: 78px; height: 78px; }
+    .compass text { font-size: 13px; }
   }
 </style>
 </head>
@@ -944,6 +946,12 @@ function eclToScene(p) {
 const ORIGIN = new THREE.Vector3();
 const _tmpV = new THREE.Vector3();
 const _tmpV2 = new THREE.Vector3();
+// Device-orientation → camera (classic three.js DeviceOrientationControls math)
+const GYRO_ZEE = new THREE.Vector3(0, 0, 1);
+const GYRO_Q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90° about X: device back → view
+const _gyroEuler = new THREE.Euler();
+const _gyroQ0 = new THREE.Quaternion();
+const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
@@ -1432,11 +1440,32 @@ const Sky = {
       this.scene.add(l);
     }
 
-    // Look-around controls
+    // Look-around controls (drag to pan, two-finger pinch to zoom)
     const el = this.renderer.domElement;
-    let dragging = false, px = 0, py = 0;
-    el.addEventListener('pointerdown', e => { dragging = true; this._resetTarget = null; this._clearFollow(); px = e.clientX; py = e.clientY; el.setPointerCapture(e.pointerId); });
+    el.style.touchAction = 'none';                           // keep page scroll out of the sky
+    let dragging = false, px = 0, py = 0, lastPinch = 0;
+    const pointers = new Map();
+    el.addEventListener('pointerdown', e => {
+      pointers.set(e.pointerId, [e.clientX, e.clientY]);
+      el.setPointerCapture(e.pointerId);
+      this._resetTarget = null;
+      this._clearFollow();
+      if (this.gyroActive) this._stopGyro();                 // manual touch takes over
+      if (pointers.size === 1) { dragging = true; px = e.clientX; py = e.clientY; }
+      else { dragging = false; lastPinch = 0; }
+    });
     el.addEventListener('pointermove', e => {
+      if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [e.clientX, e.clientY]);
+      if (pointers.size === 2) {                             // pinch → FOV zoom
+        const [a, b] = [...pointers.values()];
+        const dist = Math.hypot(a[0] - b[0], a[1] - b[1]);
+        if (lastPinch) {
+          this.camera.fov = Math.max(20, Math.min(95, this.camera.fov * (lastPinch / dist)));
+          this.camera.updateProjectionMatrix();
+        }
+        lastPinch = dist;
+        return;
+      }
       if (!dragging) return;
       const k = this.camera.fov / 600;
       this.viewAz -= (e.clientX - px) * k * DEG * 1.6;
@@ -1444,7 +1473,9 @@ const Sky = {
       this.viewAlt = Math.max(-0.35, Math.min(Math.PI / 2 - 0.01, this.viewAlt));
       px = e.clientX; py = e.clientY;
     });
-    el.addEventListener('pointerup', () => dragging = false);
+    const endPointer = e => { pointers.delete(e.pointerId); dragging = false; lastPinch = 0; };
+    el.addEventListener('pointerup', endPointer);
+    el.addEventListener('pointercancel', endPointer);
     el.addEventListener('wheel', e => {
       e.preventDefault();
       this._resetTarget = null;
@@ -1470,6 +1501,16 @@ const Sky = {
       this._resetTarget = { az: 0, alt: this.viewAlt, fov: this.camera.fov };
       this._clearFollow();
     });
+
+    // Gyro "point at sky" mode — phones/tablets only
+    if (IS_TOUCH && typeof DeviceOrientationEvent !== 'undefined') {
+      const pill = document.createElement('button');
+      pill.className = 'toggle-pill';
+      pill.innerHTML = `<span class="led"></span>📱 Point at sky`;
+      pill.onclick = () => this.toggleGyro();
+      this._gyroPill = pill;
+      document.getElementById('sky-toggles').insertBefore(pill, document.getElementById('sky-toggles').children[1]);
+    }
 
     // Reset view button — eases back to the default south-facing POV
     const resetBtn = document.createElement('button');
@@ -1588,6 +1629,39 @@ const Sky = {
     if (this._focusSel) this._focusSel.value = '';
   },
 
+  /* ---- Gyro / point-at-sky mode ---- */
+  async toggleGyro() {
+    if (this.gyroActive) { this._stopGyro(); return; }
+    // iOS 13+ requires an explicit permission request from a user gesture
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      try {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if (res !== 'granted') { this._gyroPill.lastChild.textContent = '📱 Sensor blocked'; return; }
+      } catch { this._gyroPill.lastChild.textContent = '📱 Sensor blocked'; return; }
+    }
+    this._gyroData = null;
+    this._gyroHandler = e => {
+      let alpha = e.alpha;
+      if (e.webkitCompassHeading != null) alpha = 360 - e.webkitCompassHeading;  // iOS: compass-referenced
+      if (alpha == null || e.beta == null || e.gamma == null) return;
+      this._gyroData = { alpha: alpha * DEG, beta: e.beta * DEG, gamma: e.gamma * DEG };
+    };
+    // Android Chrome exposes a compass-referenced variant; prefer it
+    this._gyroEvName = 'ondeviceorientationabsolute' in window ? 'deviceorientationabsolute' : 'deviceorientation';
+    window.addEventListener(this._gyroEvName, this._gyroHandler);
+    this.gyroActive = true;
+    this._resetTarget = null;
+    this._clearFollow();
+    this._gyroPill.classList.add('on');
+  },
+
+  _stopGyro() {
+    if (this._gyroHandler) window.removeEventListener(this._gyroEvName, this._gyroHandler);
+    this.gyroActive = false;
+    this._gyroData = null;
+    if (this._gyroPill) this._gyroPill.classList.remove('on');
+  },
+
   // World-space alt/az of a body sprite (group rotation applied)
   _bodyAltAz(name) {
     _tmpV.copy(this.bodySprites[name].position).applyQuaternion(this.group.quaternion);
@@ -1699,13 +1773,26 @@ const Sky = {
       }
     }
 
-    // Camera orientation from az/alt
-    const ca = Math.cos(this.viewAlt);
-    this.camera.lookAt(
-      Math.sin(this.viewAz) * ca * 100,
-      Math.sin(this.viewAlt) * 100 + 2,
-      -Math.cos(this.viewAz) * ca * 100
-    );
+    // Camera orientation: device sensors in gyro mode, az/alt otherwise
+    if (this.gyroActive && this._gyroData) {
+      const g = this._gyroData;
+      const screenAngle = ((screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0) * DEG;
+      _gyroEuler.set(g.beta, g.alpha, -g.gamma, 'YXZ');
+      this.camera.quaternion.setFromEuler(_gyroEuler);
+      this.camera.quaternion.multiply(GYRO_Q1);
+      this.camera.quaternion.multiply(_gyroQ0.setFromAxisAngle(GYRO_ZEE, -screenAngle));
+      // keep compass + az/alt state in sync for when gyro mode ends
+      this.camera.getWorldDirection(_tmpV);
+      this.viewAz = Math.atan2(_tmpV.x, -_tmpV.z);
+      this.viewAlt = Math.asin(Math.max(-1, Math.min(1, _tmpV.y)));
+    } else {
+      const ca = Math.cos(this.viewAlt);
+      this.camera.lookAt(
+        Math.sin(this.viewAz) * ca * 100,
+        Math.sin(this.viewAlt) * 100 + 2,
+        -Math.cos(this.viewAz) * ca * 100
+      );
+    }
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
   },
