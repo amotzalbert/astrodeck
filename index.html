@@ -1141,6 +1141,8 @@ const GRAV_MASS = {
   mercury: 0.06, venus: 0.12, earth: 0.13, mars: 0.08,
   jupiter: 0.52, saturn: 0.42, uranus: 0.26, neptune: 0.26,
 };
+const GRAV_C0 = new THREE.Color(0x234c6e), GRAV_C1 = new THREE.Color(0x38bdf8), GRAV_C2 = new THREE.Color(0x8b5cf6);
+const _gravTmpColor = new THREE.Color();
 
 /* Major moons — osculating elements from JPL Horizons at epoch 2026-06-11 (d=9659),
    planet-centric ecliptic frame: el = [N, i, w, a(AU), e, M0, n(°/day)].
@@ -1512,6 +1514,7 @@ const Orrery = {
       { label: 'Gravity grid', get: () => this.showGrav, set: v => {
           this.showGrav = v;
           this.gravGrid.visible = v;
+          for (const p of this.gravPatches) p.visible = v;
           if (v) this._gravT = null;                           // force a sheet rebuild now
         } },
     ]);
@@ -1694,48 +1697,93 @@ const Orrery = {
       for (let k = 0; k < SPOKES; k++) indices.push(idx(j, k), idx(j, k + 1));
     for (let j = 0; j < RINGS; j++)
       for (let k = 0; k < SPOKES; k += 2) indices.push(idx(j, k), idx(j + 1, k));
-    const N = (RINGS + 1) * SPOKES;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
-    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
-    geo.setIndex(indices);
-    this.gravGrid = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+    const mat = new THREE.LineBasicMaterial({
       vertexColors: true, transparent: true, opacity: 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false,
-    }));
-    this.gravGrid.visible = this.showGrav;
-    this.scene.add(this.gravGrid);
+    });
+    const makeSheet = (nodes, idxs) => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nodes.length / 2 * 3), 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nodes.length / 2 * 3), 3));
+      geo.setIndex(idxs);
+      const mesh = new THREE.LineSegments(geo, mat);
+      mesh.userData.nodes = nodes;
+      mesh.visible = this.showGrav;
+      this.scene.add(mesh);
+      return mesh;
+    };
+    this.gravGrid = makeSheet(this._gravNodes, indices);
+    // Fine patches riding with each planet — crisp wells when zoomed in
+    this.gravPatches = [];
+    for (const name of PLANET_NAMES) {
+      const size = PLANET_META[name].size;
+      const soft = size * 1.6 + 0.5;
+      const PR0 = size * 1.15, PR1 = soft * 3.6, SP = 36, RG = 14;
+      const nodes = new Float32Array((RG + 1) * SP * 2);
+      let n = 0;
+      for (let j = 0; j <= RG; j++) {
+        const r = PR0 * Math.pow(PR1 / PR0, j / RG);
+        for (let k = 0; k < SP; k++) {
+          const a = k / SP * 2 * Math.PI;
+          nodes[n++] = r * Math.cos(a);
+          nodes[n++] = r * Math.sin(a);
+        }
+      }
+      const pidx = (j, k) => j * SP + (k % SP);
+      const pind = [];
+      for (let j = 0; j <= RG; j++)
+        for (let k = 0; k < SP; k++) pind.push(pidx(j, k), pidx(j, k + 1));
+      for (let j = 0; j < RG; j++)
+        for (let k = 0; k < SP; k += 2) pind.push(pidx(j, k), pidx(j + 1, k));
+      const mesh = makeSheet(nodes, pind);
+      mesh.userData.planet = name;
+      this.gravPatches.push(mesh);
+    }
+  },
+
+  // Write positions + colors for one sheet; nodes are local polar (x,z) offsets from (cx,cz).
+  // Color = relative dent (proximity to the nearest well), so every planet's well
+  // sweeps the full teal→violet ramp — not just the Sun's funnel.
+  _fillGravSheet(mesh, cx, cz, wells) {
+    const nodes = mesh.userData.nodes;
+    const posA = mesh.geometry.attributes.position;
+    const colA = mesh.geometry.attributes.color;
+    const c0 = GRAV_C0, c1 = GRAV_C1, c2 = GRAV_C2, tmp = _gravTmpColor;
+    for (let i = 0, n = posA.count; i < n; i++) {
+      const x = nodes[i * 2] + cx, z = nodes[i * 2 + 1] + cz;
+      let raw = 0, tloc = 0;
+      for (const w of wells) {
+        const dx = x - w.x, dz = z - w.z;
+        const g = w.m / Math.sqrt(dx * dx + dz * dz + w.e);
+        raw += g;
+        const nrm = g / w.peak;                                     // 1 at well centre → 0 far away
+        if (nrm > tloc) tloc = nrm;
+      }
+      const depth = 3.2 * Math.log1p(8 * raw);
+      posA.setXYZ(i, x, -0.3 - depth, z);
+      const t = Math.min(1, Math.pow(tloc, 0.6));                   // gamma lift: mid-well already colourful
+      if (t < 0.5) tmp.lerpColors(c0, c1, t * 2); else tmp.lerpColors(c1, c2, (t - 0.5) * 2);
+      colA.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    }
+    posA.needsUpdate = true;
+    colA.needsUpdate = true;
   },
 
   updateGravityGrid() {
     if (!this.gravGrid?.visible) return;
     if (this._gravT === Sim.ms) return;                             // planets only move with sim time
     this._gravT = Sim.ms;
-    const wells = [{ x: 0, z: 0, m: 1.0, e: 2.4 * 2.4 }];
+    const wells = [{ x: 0, z: 0, m: 1.0, e: 2.4 * 2.4, peak: 1.0 / 2.4 }];
     for (const [name, m] of Object.entries(GRAV_MASS)) {
       const p = this.meshes[name].position;
       const soft = PLANET_META[name].size * 1.6 + 0.5;
-      wells.push({ x: p.x, z: p.z, m, e: soft * soft });
+      wells.push({ x: p.x, z: p.z, m, e: soft * soft, peak: m / soft });
     }
-    const posA = this.gravGrid.geometry.attributes.position;
-    const colA = this.gravGrid.geometry.attributes.color;
-    const c0 = new THREE.Color(0x234c6e), c1 = new THREE.Color(0x38bdf8), c2 = new THREE.Color(0x8b5cf6);
-    const tmp = new THREE.Color();
-    for (let i = 0, n = posA.count; i < n; i++) {
-      const x = this._gravNodes[i * 2], z = this._gravNodes[i * 2 + 1];
-      let raw = 0;
-      for (const w of wells) {
-        const dx = x - w.x, dz = z - w.z;
-        raw += w.m / Math.sqrt(dx * dx + dz * dz + w.e);
-      }
-      const depth = 3.2 * Math.log1p(8 * raw);
-      posA.setXYZ(i, x, -0.3 - depth, z);
-      const t = Math.min(1, depth / 4.5);
-      if (t < 0.5) tmp.lerpColors(c0, c1, t * 2); else tmp.lerpColors(c1, c2, (t - 0.5) * 2);
-      colA.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    this._fillGravSheet(this.gravGrid, 0, 0, wells);
+    for (const patch of this.gravPatches) {
+      const p = this.meshes[patch.userData.planet].position;
+      this._fillGravSheet(patch, p.x, p.z, wells);
     }
-    posA.needsUpdate = true;
-    colA.needsUpdate = true;
   },
 
   // Camera focus: null = Sun (origin); a planet/moon name = glide to it and ride along
