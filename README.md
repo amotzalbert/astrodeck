@@ -15,6 +15,8 @@ A single-file, real-time 3D night-sky app. No build, no install, no account — 
 - **ISS in real time** — low-poly 3D model with sun-tracking solar arrays, riding its true 51.6°-inclined orbit, SGP4-propagated from today's TLE (verified against live tracking to within seconds of motion)
 - **Earth with your home marked** — red dot at your saved lat/lon on a globe oriented by true sidereal rotation + 23.4° axial tilt, so day/night vs the Sun is real
 - **Click any body** → camera glides over and *rides along* as it orbits; info card with live distances, physical facts; selected orbit highlights in the body's color
+- **🧲 Mag fields toggle** — dipole field lines for the six planets with global fields, at their real tilts (Earth 11.5°, Uranus 59°, Neptune 47°); Venus & Mars correctly show none
+- **🌀 Gravity grid toggle** — a spacetime rubber-sheet under the ecliptic: the Sun digs a deep funnel, every planet dents it, and the wells ride along as the planets orbit
 - Sun **light dimmer** (0–200%), orbit-path & label toggles
 - Time machine: pause, ±speeds from −1 day/s to +1 week/s, jump to any date
 

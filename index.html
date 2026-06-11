@@ -800,7 +800,9 @@
           <div class="help-row"><span class="icon">🔭</span><span><strong>Click any body</strong> — planet, moon, or ISS — to focus the camera on it and see a live info card with distances, orbital data, and facts. The camera rides along as it moves.</span></div>
           <div class="help-row"><span class="icon">🛸</span><span>The <strong>ISS</strong> is a live 3D model: SGP4-propagated from today's TLE. Its solar arrays track the Sun in real time. Click it for ground track and pass info.</span></div>
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
-          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, and a sun brightness slider.</span></div>
+          <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
+          <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
+          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, magnetic fields, the gravity grid, and a sun brightness slider.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
         </div>
       </div>
@@ -1123,6 +1125,23 @@ const PLANET_META = {
 };
 const PLANET_NAMES = Object.keys(PLANET_META);
 
+// Dipole magnetic fields — real tilts (vs rotation axis); shells in display radii,
+// reach stylized by relative field strength. Venus & Mars: no global field.
+const MAG_FIELDS = {
+  mercury: { tilt: 0,    shells: [1.5, 2.0],           color: 0x5eead4 },
+  earth:   { tilt: 11.5, shells: [1.6, 2.1, 2.7],      color: 0x5eead4 },
+  jupiter: { tilt: 9.6,  shells: [1.7, 2.3, 3.0, 3.8], color: 0x8b5cf6 },
+  saturn:  { tilt: 0,    shells: [1.6, 2.1, 2.7, 3.3], color: 0x8b5cf6 },
+  uranus:  { tilt: 59,   shells: [1.6, 2.1, 2.7],      color: 0xa78bfa },
+  neptune: { tilt: 47,   shells: [1.6, 2.1, 2.7],      color: 0xa78bfa },
+};
+
+// Display masses for the gravity sheet (real ratios would make planet dents invisible)
+const GRAV_MASS = {
+  mercury: 0.06, venus: 0.12, earth: 0.13, mars: 0.08,
+  jupiter: 0.52, saturn: 0.42, uranus: 0.26, neptune: 0.26,
+};
+
 /* Major moons — osculating elements from JPL Horizons at epoch 2026-06-11 (d=9659),
    planet-centric ecliptic frame: el = [N, i, w, a(AU), e, M0, n(°/day)].
    Real periods + real epoch phases; directions are true, only display radius is stylized. */
@@ -1290,7 +1309,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false,
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1486,7 +1505,18 @@ const Orrery = {
           this.showISS = v;
           if (!v && this.focusBody === 'iss') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
         } },
+      { label: 'Mag fields', get: () => this.showMag, set: v => {
+          this.showMag = v;
+          for (const g of this.magFields) g.visible = v;
+        } },
+      { label: 'Gravity grid', get: () => this.showGrav, set: v => {
+          this.showGrav = v;
+          this.gravGrid.visible = v;
+          if (v) this._gravT = null;                           // force a sheet rebuild now
+        } },
     ]);
+    this.addMagFields();
+    this.addGravityGrid();
 
     // Sun light dimmer
     const dimmer = document.createElement('div');
@@ -1601,6 +1631,113 @@ const Orrery = {
     }
   },
 
+  // Dipole field lines r = L·sin²θ — 8 meridian half-planes per shell, one
+  // LineSegments per planet, parented to the planet so they ride its orbit.
+  addMagFields() {
+    this.magFields = [];
+    for (const [name, def] of Object.entries(MAG_FIELDS)) {
+      const R = PLANET_META[name].size;
+      const pos = [], col = [];
+      const c = new THREE.Color(def.color);
+      def.shells.forEach((L, si) => {
+        const th0 = Math.asin(Math.sqrt(1 / L));
+        const fade = 1 - (si / def.shells.length) * 0.55;
+        for (let f = 0; f < 8; f++) {
+          const phi = f * Math.PI / 4, cp = Math.cos(phi), sp = Math.sin(phi);
+          let prev = null;
+          for (let k = 0; k <= 28; k++) {
+            const th = th0 + (Math.PI - 2 * th0) * k / 28;
+            const r = L * Math.sin(th) ** 2 * R;
+            const p = [r * Math.sin(th) * cp, r * Math.cos(th), -r * Math.sin(th) * sp];
+            if (prev) {
+              pos.push(...prev, ...p);
+              col.push(c.r * fade, c.g * fade, c.b * fade, c.r * fade, c.g * fade, c.b * fade);
+            }
+            prev = p;
+          }
+        }
+      });
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.7,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      }));
+      const g = new THREE.Group();
+      g.rotation.z = def.tilt * DEG;
+      g.add(lines);
+      g.visible = this.showMag;
+      // Earth's field hangs off the real-axis spin group → true 23.4° + 11.5° dipole tilt
+      (name === 'earth' ? this.earthSpin : this.meshes[name]).add(g);
+      this.magFields.push(g);
+    }
+  },
+
+  // Spacetime sheet: polar wireframe under the ecliptic, vertex depth from the
+  // summed (softened, log-scaled) potential of Sun + planets. Wells track orbits.
+  addGravityGrid() {
+    const SPOKES = 96, RINGS = 64, R0 = 1.6, R1 = 56;
+    this._gravNodes = new Float32Array((RINGS + 1) * SPOKES * 2);   // polar grid (x, z) pairs
+    let n = 0;
+    for (let j = 0; j <= RINGS; j++) {
+      const r = R0 * Math.pow(R1 / R0, j / RINGS);                  // geometric spacing: dense near Sun
+      for (let k = 0; k < SPOKES; k++) {
+        const a = k / SPOKES * 2 * Math.PI;
+        this._gravNodes[n++] = r * Math.cos(a);
+        this._gravNodes[n++] = r * Math.sin(a);
+      }
+    }
+    const idx = (j, k) => j * SPOKES + (k % SPOKES);
+    const indices = [];
+    for (let j = 0; j <= RINGS; j++)
+      for (let k = 0; k < SPOKES; k++) indices.push(idx(j, k), idx(j, k + 1));
+    for (let j = 0; j < RINGS; j++)
+      for (let k = 0; k < SPOKES; k += 2) indices.push(idx(j, k), idx(j + 1, k));
+    const N = (RINGS + 1) * SPOKES;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(N * 3), 3));
+    geo.setIndex(indices);
+    this.gravGrid = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    this.gravGrid.visible = this.showGrav;
+    this.scene.add(this.gravGrid);
+  },
+
+  updateGravityGrid() {
+    if (!this.gravGrid?.visible) return;
+    if (this._gravT === Sim.ms) return;                             // planets only move with sim time
+    this._gravT = Sim.ms;
+    const wells = [{ x: 0, z: 0, m: 1.0, e: 2.4 * 2.4 }];
+    for (const [name, m] of Object.entries(GRAV_MASS)) {
+      const p = this.meshes[name].position;
+      const soft = PLANET_META[name].size * 1.6 + 0.5;
+      wells.push({ x: p.x, z: p.z, m, e: soft * soft });
+    }
+    const posA = this.gravGrid.geometry.attributes.position;
+    const colA = this.gravGrid.geometry.attributes.color;
+    const c0 = new THREE.Color(0x234c6e), c1 = new THREE.Color(0x38bdf8), c2 = new THREE.Color(0x8b5cf6);
+    const tmp = new THREE.Color();
+    for (let i = 0, n = posA.count; i < n; i++) {
+      const x = this._gravNodes[i * 2], z = this._gravNodes[i * 2 + 1];
+      let raw = 0;
+      for (const w of wells) {
+        const dx = x - w.x, dz = z - w.z;
+        raw += w.m / Math.sqrt(dx * dx + dz * dz + w.e);
+      }
+      const depth = 3.2 * Math.log1p(8 * raw);
+      posA.setXYZ(i, x, -0.3 - depth, z);
+      const t = Math.min(1, depth / 4.5);
+      if (t < 0.5) tmp.lerpColors(c0, c1, t * 2); else tmp.lerpColors(c1, c2, (t - 0.5) * 2);
+      colA.setXYZ(i, tmp.r, tmp.g, tmp.b);
+    }
+    posA.needsUpdate = true;
+    colA.needsUpdate = true;
+  },
+
   // Camera focus: null = Sun (origin); a planet/moon name = glide to it and ride along
   setFocus(body) {
     this.focusBody = body;
@@ -1667,6 +1804,7 @@ const Orrery = {
     }
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
     this.updateISS(d);
+    this.updateGravityGrid();
     // Moons: real Kepler propagation, true direction, display-scaled radius
     for (const [mname, mdef] of Object.entries(MOONS)) {
       const el = mdef.el;
