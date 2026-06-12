@@ -13,6 +13,7 @@ A single-file, real-time 3D night-sky app. No build, no install, no account — 
 - **Realistic textures** for the Sun (rotating, ~25-day period), all planets, the Moon, and Saturn's rings
 - **12 major moons with real ephemeris** — Phobos, Deimos, Io, Europa, Ganymede, Callisto, Enceladus, Rhea, Titan, Titania, Oberon, Triton — Kepler-propagated from JPL Horizons osculating elements (true directions and phases; Triton correctly retrograde, Uranus' moons correctly sideways)
 - **ISS in real time** — low-poly 3D model with sun-tracking solar arrays, riding its true 51.6°-inclined orbit, SGP4-propagated from today's TLE (verified against live tracking to within seconds of motion)
+- **Known-satellites layer** — the ~150 brightest catalogued objects (Hubble, Tiangong, rocket bodies) live around Earth from fresh Celestrak TLEs, toggleable
 - **Earth with your home marked** — red dot at your saved lat/lon on a globe oriented by true sidereal rotation + 23.4° axial tilt, so day/night vs the Sun is real
 - **Click any body** → camera glides over and *rides along* as it orbits; info card with live distances, physical facts; selected orbit highlights in the body's color
 - **🧲 Mag fields toggle** — dipole field lines for the six planets with global fields, at their real tilts (Earth 11.5°, Uranus 59°, Neptune 47°); Venus & Mars correctly show none

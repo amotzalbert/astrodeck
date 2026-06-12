@@ -800,9 +800,10 @@
           <div class="help-row"><span class="icon">🔭</span><span><strong>Click any body</strong> — planet, moon, or ISS — to focus the camera on it and see a live info card with distances, orbital data, and facts. The camera rides along as it moves.</span></div>
           <div class="help-row"><span class="icon">🛸</span><span>The <strong>ISS</strong> is a live 3D model: SGP4-propagated from today's TLE. Its solar arrays track the Sun in real time. Click it for ground track and pass info.</span></div>
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
+          <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~160 brightest known objects in orbit (Hubble, Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth. Hubble and Tiangong get labels when Earth is focused.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
-          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
+          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
         </div>
       </div>
@@ -1205,6 +1206,28 @@ function issState(date) {
   return pv;
 }
 
+// Known-satellites layer: Celestrak's "visual" group — the ~160 brightest,
+// most recognisable objects in orbit (Hubble, Tiangong, big rocket bodies…).
+// Fetched lazily the first time the Satellites toggle is switched on.
+let satCatalog = null, satLoading = false;
+async function loadSatCatalog() {
+  if (satCatalog || satLoading || typeof satellite === 'undefined') return;
+  satLoading = true;
+  try {
+    const txt = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=TLE')).text();
+    const lines = txt.trim().split(/\r?\n/);
+    const out = [];
+    for (let i = 0; i + 2 < lines.length; i += 3) {
+      const name = lines[i].trim(), l1 = lines[i + 1], l2 = lines[i + 2];
+      if (!l1 || !l2 || l1[0] !== '1') break;
+      if (l1.slice(2, 7) === '25544') continue;              // ISS has its own layer
+      out.push({ name, satrec: satellite.twoline2satrec(l1.trim(), l2.trim()) });
+    }
+    if (out.length) { satCatalog = out; Orrery.onSatsLoaded(); }
+  } catch (err) { console.warn('satellite catalog unavailable', err); }
+  satLoading = false;
+}
+
 // Is the ISS in sunlight? (cylindrical Earth-shadow model)
 function issSunlit(posEci, dateMs) {
   const d = dDays(dateMs / 86400000 + 2440587.5);
@@ -1312,7 +1335,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false,
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1423,12 +1446,6 @@ const Orrery = {
           new THREE.SphereGeometry(0.05, 16, 16),
           new THREE.MeshBasicMaterial({ color: 0xff3b30 })
         );
-        const dotGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: glowTexture('rgba(255,80,60,0.9)', 'rgba(255,60,40,0)'),
-          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-        }));
-        dotGlow.scale.setScalar(0.45);
-        dot.add(dotGlow);
         this.homeDot = dot;
         mesh.add(dot);                                       // rides on the spinning globe
         this.earthSpin = mesh;
@@ -1510,6 +1527,12 @@ const Orrery = {
           this.showISS = v;
           if (!v && this.focusBody === 'iss') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
         } },
+      { label: 'Satellites', get: () => this.showSats, set: v => {
+          this.showSats = v;
+          if (v) { loadSatCatalog(); this._satT = null; }      // lazy TLE fetch on first enable
+          this.satPoints.visible = v;
+          if (satCatalog) for (const s of satCatalog) if (s.labelObj) s.labelObj.visible = v && this._satLabelsOn;
+        } },
       { label: 'Moons & rings', get: () => this.showMoons, set: v => {
           this.showMoons = v;                                  // Earth's Moon stays — it's family
           for (const m of Object.values(this.moonMeshes)) m.visible = v;
@@ -1536,6 +1559,7 @@ const Orrery = {
     this.addMagFields();
     this.addGravityGrid();
     this.addMilkyWay();
+    this.addSatLayer();
 
     // Sun light dimmer
     const dimmer = document.createElement('div');
@@ -1594,12 +1618,6 @@ const Orrery = {
     );
     this.issModel = this._buildISSModel();
     dot.add(this.issModel);
-    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTexture('rgba(140,250,255,0.7)', 'rgba(140,250,255,0)'),
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    }));
-    glow.scale.setScalar(0.16);
-    dot.add(glow);
     const label = makeLabel('ISS', 'moon-label');
     label.visible = false;
     dot.add(label);
@@ -1651,6 +1669,59 @@ const Orrery = {
   },
 
   // Dipole field lines r = L·sin²θ — 8 meridian half-planes per shell, one
+  // Known-satellites layer: one Points cloud parented to Earth, same display
+  // shell as the ISS (altitude exaggerated so LEO clears the globe surface).
+  addSatLayer() {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(300 * 3), 3));
+    geo.setDrawRange(0, 0);
+    this.satPoints = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.05, map: starSprite, color: 0xcfe8ff, transparent: true, opacity: 0.95,
+      depthWrite: false, sizeAttenuation: true,
+    }));
+    this.satPoints.frustumCulled = false;                    // positions stream in each frame
+    this.satPoints.visible = this.showSats;
+    this.meshes.earth.add(this.satPoints);
+  },
+
+  onSatsLoaded() {                                           // label the celebrities
+    let gotHST = false, gotCSS = false;
+    for (const s of satCatalog) {
+      let famous = null;
+      if (!gotHST && /^HST/.test(s.name)) { famous = 'Hubble'; gotHST = true; }
+      else if (!gotCSS && /TIANHE|TIANGONG|^CSS/.test(s.name)) { famous = 'Tiangong'; gotCSS = true; }
+      if (!famous) continue;
+      const l = makeLabel(famous, 'moon-label');
+      l.visible = this.showSats && !!this._satLabelsOn;       // catalog may arrive after setFocus
+      this.meshes.earth.add(l);
+      s.labelObj = l;
+    }
+    this._satT = null;                                       // place everything now
+  },
+
+  updateSats(d) {
+    if (!this.satPoints || !this.showSats || !satCatalog) return;
+    if (this._satT === Sim.ms) return;
+    this._satT = Sim.ms;
+    const attr = this.satPoints.geometry.attributes.position;
+    let n = 0;
+    if (Math.abs(Sim.ms - Date.now()) < 45 * 86400000) {     // TLEs too stale beyond that
+      const eps = obliquity(d), size = PLANET_META.earth.size, date = Sim.date;
+      for (const s of satCatalog) {
+        const pv = satellite.propagate(s.satrec, date);
+        const p = pv && pv.position;
+        if (!p || !isFinite(p.x)) { if (s.labelObj) s.labelObj.visible = false; continue; }
+        const rkm = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+        const f = Math.min(3.4, 1 + 0.38 * Math.pow(Math.max(rkm - 6371, 150) / 420, 0.55));
+        this._eciToScene(p, eps, _tmpV).normalize().multiplyScalar(size * f);
+        if (n < 300) attr.setXYZ(n++, _tmpV.x, _tmpV.y, _tmpV.z);
+        if (s.labelObj) s.labelObj.position.copy(_tmpV);
+      }
+    }
+    this.satPoints.geometry.setDrawRange(0, n);
+    attr.needsUpdate = true;
+  },
+
   // Galaxy backdrop: the shared Milky Way point cloud on a distant sphere,
   // rotated from the equatorial frame into the scene's ecliptic frame — the
   // band crosses at its true 60° tilt, core fixed toward Sagittarius.
@@ -1830,6 +1901,8 @@ const Orrery = {
     }
     if (this.earthMoonLabel) this.earthMoonLabel.visible = system === 'earth';
     if (this.issDot) this.issDot.userData.label.visible = system === 'earth';
+    this._satLabelsOn = system === 'earth';
+    if (satCatalog) for (const s of satCatalog) if (s.labelObj) s.labelObj.visible = this.showSats && this._satLabelsOn;
   },
 
   // World-space position of the current focus target (moons are nested in groups)
@@ -1884,6 +1957,7 @@ const Orrery = {
     }
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
     this.updateISS(d);
+    this.updateSats(d);
     this.updateGravityGrid();
     // Moons: real Kepler propagation, true direction, display-scaled radius
     for (const [mname, mdef] of Object.entries(MOONS)) {
