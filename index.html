@@ -2456,6 +2456,33 @@ const Orrery = {
 
 /* ---------- Info card (shared) ---------- */
 const AU_KM = 149597870.7;
+// Surface gravity + relativistic clock rate vs Earth (Sun potential +
+// orbital velocity + own surface potential; moons add their planet's well).
+const EXTRA_INFO = {
+  mercury: { g: '0.38 g', dil: '−1,975 µs/day (slower)' },
+  venus: { g: '0.90 g', dil: '−482 µs/day (slower)' },
+  earth: { g: '1.00 g', dil: '+0.0 µs/day (faster)' },
+  mars: { g: '0.38 g', dil: '+488 µs/day (faster)' },
+  jupiter: { g: '2.53 g', dil: '−649 µs/day (slower)' },
+  saturn: { g: '1.06 g', dil: '+579 µs/day (faster)' },
+  uranus: { g: '0.89 g', dil: '+1,053 µs/day (faster)' },
+  neptune: { g: '1.14 g', dil: '+1,030 µs/day (faster)' },
+  moon: { g: '0.166 g', dil: '+55.9 µs/day (faster)' },
+  phobos: { g: '0.0006 g', dil: '+493 µs/day (faster)' },
+  deimos: { g: '0.0003 g', dil: '+497 µs/day (faster)' },
+  io: { g: '0.183 g', dil: '+657 µs/day (faster)' },
+  europa: { g: '0.134 g', dil: '+819 µs/day (faster)' },
+  ganymede: { g: '0.146 g', dil: '+919 µs/day (faster)' },
+  callisto: { g: '0.126 g', dil: '+994 µs/day (faster)' },
+  enceladus: { g: '0.011 g', dil: '+975 µs/day (faster)' },
+  rhea: { g: '0.026 g', dil: '+1,101 µs/day (faster)' },
+  titan: { g: '0.138 g', dil: '+1,157 µs/day (faster)' },
+  titania: { g: '0.038 g', dil: '+1,253 µs/day (faster)' },
+  oberon: { g: '0.035 g', dil: '+1,258 µs/day (faster)' },
+  triton: { g: '0.080 g', dil: '+1,268 µs/day (faster)' },
+  sun: { g: '28.0 g', dil: '−0.18 s/day (slower)' },
+};
+
 function showBodyInfo(body, cardId, onClose) {
   const card = document.getElementById(cardId);
   const d = Sim.d;
@@ -2521,6 +2548,8 @@ function showBodyInfo(body, cardId, onClose) {
          + row('Diameter', meta.diameter) + row('Day length', meta.day) + row('Year length', meta.year);
     fact = meta.fact;
   }
+  const xi = EXTRA_INFO[body];
+  if (xi) rows += row('Surface gravity', xi.g) + row('Clocks vs Earth', xi.dil);
   card.innerHTML = `<button class="close">×</button><h3>${title}</h3><div class="kind">${kind}</div>${rows}<div class="fact">${fact}</div>`;
   card.querySelector('.close').onclick = () => { card.classList.remove('open'); if (onClose) onClose(); };
   card.classList.add('open');
