@@ -40,7 +40,10 @@ A single-file, real-time 3D night-sky app. No build, no install, no account — 
 - Star/constellation labels fade in daylight
 
 ### 🚀 Mission Replays
-- **Voyager 2 Grand Tour** — fly the real 1977–1989 trajectory (baked JPL Horizons ephemeris) from launch through all four giant-planet flybys to interstellar space, with story cards at every milestone
+- **Voyager 2 Grand Tour** — fly the real 1977–1989 trajectory from launch through all four giant-planet flybys to interstellar space, with story cards at every milestone and a low-poly Voyager model, dish pointed home
+- **Cassini** — Venus–Venus–Earth–Jupiter gravity assists to Saturn, Huygens' Titan landing, and the 2017 Grand Finale dive
+- **Parker Solar Probe** — seven Venus flybys spiralling into the corona; watch the orbit whip around perihelion at 692,000 km/h
+- All missions ride baked JPL Horizons spacecraft ephemerides on the live orrery clock — planets stand in their true positions at every flyby
 
 ### 🔭 Telescope Feeds
 - **Earth from the ISS — live 4K** (Sen, 24/7 stream)
