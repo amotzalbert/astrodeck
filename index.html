@@ -3637,7 +3637,9 @@ const MISSIONS = {
     events: [
       { jd: 2440419.064, t: 'Launch', d: 'Jul 16 1969, 13:32 UTC — a Saturn V, still the most powerful rocket ever flown, climbs out of Florida with three men on top.' },
       { jd: 2440419.18, t: 'Translunar injection', d: 'Two hours and one parking orbit later, the third stage relights for six minutes — goodbye Earth, hello a three-day coast.' },
+      { jd: 2440419.21, t: 'Transposition & docking', d: 'Columbia separates, pirouettes 180°, and plucks Eagle nose-first from the spent third stage — which drifts away toward solar orbit.' },
       { jd: 2440422.22, t: 'Lunar orbit insertion', d: 'Jul 19, 17:22 UTC — burning behind the Moon, out of contact with Earth, Columbia and Eagle slip into lunar orbit.' },
+      { jd: 2440423.24, t: 'Eagle undocks', d: 'Jul 20, 17:44 UTC — “The Eagle has wings.” Armstrong and Aldrin begin the descent while Collins keeps Columbia circling overhead.' },
       { jd: 2440423.345, t: 'The Eagle has landed', d: 'Jul 20, 20:17 UTC — Armstrong flies past boulders to a smooth spot in Mare Tranquillitatis with ~25 seconds of fuel left.' },
       { jd: 2440424.122, t: 'One small step', d: 'Jul 21, 02:56 UTC — 600 million people watch a boot press into lunar dust. Aldrin follows; Collins keeps the lonely vigil overhead.' },
       { jd: 2440424.705, t: 'Homeward', d: 'Eagle rejoins Columbia and is cast off; the SPS engine burns trans-Earth injection. Falling home takes two and a half days.' },
@@ -3678,47 +3680,151 @@ const Missions = {
     return g;
   },
 
-  // Apollo CSM: silver service module, polished command-module cone, engine bell.
-  _buildApollo() {
+  // Apollo hardware: shared materials, the full stack as named parts, and the
+  // staging timeline — every separation on its real July 1969 timestamp.
+  _apT: { L: 2440419.064, TLI: 2440419.18, TD: 2440419.21, LOI: 2440422.22, UNDOCK: 2440423.24,
+          LAND: 2440423.345, LIFT: 2440424.246, DOCK2: 2440424.40, LMJ: 2440424.49,
+          TEI: 2440424.705, SMJ: 2440427.18, SPL: 2440427.2 },
+
+  _apolloParts() {
+    return {
+      silver: new THREE.MeshStandardMaterial({ color: 0xd9dee8, roughness: 0.35, metalness: 0.6 }),
+      shiny: new THREE.MeshStandardMaterial({ color: 0xc9d2e0, roughness: 0.2, metalness: 0.85 }),
+      gold: new THREE.MeshStandardMaterial({ color: 0xd9b24a, roughness: 0.4, metalness: 0.7, emissive: 0x2a1f06 }),
+      gray: new THREE.MeshStandardMaterial({ color: 0x9aa3b2, roughness: 0.55, metalness: 0.3 }),
+      dark: new THREE.MeshStandardMaterial({ color: 0x1a2230, roughness: 0.6 }),
+    };
+  },
+
+  _buildLMDesc(M) {                                          // gold octagon + four legs with pads
     const g = new THREE.Group();
-    const silver = new THREE.MeshStandardMaterial({ color: 0xd9dee8, roughness: 0.35, metalness: 0.6 });
-    const shiny = new THREE.MeshStandardMaterial({ color: 0xc4ccd8, roughness: 0.25, metalness: 0.8 });
-    const sm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.09, 14), silver);
-    sm.rotation.x = Math.PI / 2;
-    g.add(sm);
-    const cm = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.05, 14), shiny);
-    cm.rotation.x = -Math.PI / 2;
-    cm.position.z = -0.07;
-    g.add(cm);
-    const noz = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.034, 12, 1, true), shiny);
-    noz.rotation.x = Math.PI / 2;
-    noz.position.z = 0.062;
-    g.add(noz);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.026, 8), M.gold);
+    body.rotation.x = Math.PI / 2;
+    g.add(body);
+    for (let i = 0; i < 4; i++) {
+      const a = i * Math.PI / 2 + Math.PI / 4;
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.0024, 0.0024, 0.045), M.gold);
+      leg.rotation.x = Math.PI / 2;
+      leg.position.set(Math.cos(a) * 0.04, Math.sin(a) * 0.04, -0.022);
+      g.add(leg);
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.003), M.gold);
+      pad.rotation.x = Math.PI / 2;
+      pad.position.set(Math.cos(a) * 0.04, Math.sin(a) * 0.04, -0.046);
+      g.add(pad);
+    }
     return g;
   },
 
-  // Earth-local Apollo position by mission phase — schematic geometry pinned to
-  // the real July 1969 clock; the translunar leg chases the Moon's live position.
+  _buildApollo() {                                           // primary craft, parts named in this._ap
+    const M = this._apolloParts();
+    const g = new THREE.Group();
+    const A = this._ap = {};
+    A.lmDesc = this._buildLMDesc(M);
+    A.lmDesc.position.z = -0.112;
+    g.add(A.lmDesc);
+    A.lmAsc = new THREE.Mesh(new THREE.CylinderGeometry(0.021, 0.026, 0.026, 8), M.gray);
+    A.lmAsc.rotation.x = Math.PI / 2;
+    A.lmAsc.position.z = -0.085;
+    g.add(A.lmAsc);
+    A.cm = new THREE.Mesh(new THREE.ConeGeometry(0.032, 0.045, 16), M.shiny);
+    A.cm.rotation.x = -Math.PI / 2;
+    A.cm.position.z = -0.045;
+    g.add(A.cm);
+    A.sm = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, 0.07, 16), M.silver);
+    A.sm.rotation.x = Math.PI / 2;
+    A.sm.position.z = 0.012;
+    g.add(A.sm);
+    A.bell = new THREE.Mesh(new THREE.ConeGeometry(0.017, 0.028, 12, 1, true), M.gray);
+    A.bell.rotation.x = -Math.PI / 2;
+    A.bell.position.z = 0.06;
+    g.add(A.bell);
+    A.sivb = new THREE.Group();
+    const sb = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.15, 16),
+      new THREE.MeshStandardMaterial({ color: 0xe8ecf2, roughness: 0.45, metalness: 0.2 }));
+    sb.rotation.x = Math.PI / 2;
+    A.sivb.add(sb);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0405, 0.0405, 0.02, 16), M.dark);
+    band.rotation.x = Math.PI / 2;
+    band.position.z = -0.04;
+    A.sivb.add(band);
+    const sbell = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.045, 14, 1, true), M.gray);
+    sbell.rotation.x = -Math.PI / 2;
+    sbell.position.z = 0.095;
+    A.sivb.add(sbell);
+    A.sivb.position.z = 0.175;
+    g.add(A.sivb);
+    return g;
+  },
+
+  _park(a) { return new THREE.Vector3(Math.cos(a) * 0.66, 0.02, Math.sin(a) * 0.66); },
+  _lunarOrbit(jd, mv, ph) {
+    const a = (jd - this._apT.LOI) / 0.085 * 2 * Math.PI + (ph || 0);
+    return mv.clone().add(new THREE.Vector3(Math.cos(a) * 0.2, 0.025, Math.sin(a) * 0.2));
+  },
+
   _apolloPos(jd) {
-    const L = 2440419.064, TLI = 2440419.18, LOI = 2440422.22,
-          LAND = 2440423.345, LIFT = 2440424.246, TEI = 2440424.705, SPL = 2440427.2;
-    if (jd < L || jd > SPL) return new THREE.Vector3(0.42, 0.02, -0.38);   // on the pad / bobbing in the Pacific
-    const moonMesh = Orrery.meshes.earth.children.find(c => c.userData.isMoon);
-    const mv = moonMesh.position;
-    const park = a => new THREE.Vector3(Math.cos(a) * 0.66, 0.02, Math.sin(a) * 0.66);
-    if (jd < TLI) return park((jd - L) / 0.12 * 4 * Math.PI);
-    if (jd < LOI) {                                          // translunar coast
-      const f = (jd - TLI) / (LOI - TLI), e = f * f * (3 - 2 * f);
-      const out = park((TLI - L) / 0.12 * 4 * Math.PI).lerp(mv.clone().multiplyScalar(0.81), e);
+    const T = this._apT;
+    if (jd < T.L || jd > T.SPL) return new THREE.Vector3(0.42, 0.02, -0.38);   // pad / Pacific
+    const mv = Orrery.meshes.earth.children.find(c => c.userData.isMoon).position;
+    if (jd < T.TLI) return this._park((jd - T.L) / 0.12 * 4 * Math.PI);
+    if (jd < T.LOI) {                                        // translunar coast, chasing the live Moon
+      const f = (jd - T.TLI) / (T.LOI - T.TLI), e = f * f * (3 - 2 * f);
+      const out = this._park((T.TLI - T.L) / 0.12 * 4 * Math.PI).lerp(mv.clone().multiplyScalar(0.81), e);
       return out.add(new THREE.Vector3(-mv.z, 0, mv.x).normalize().multiplyScalar(Math.sin(Math.PI * f) * 0.14));
     }
-    if (jd >= LAND && jd < LIFT) return mv.clone().multiplyScalar(0.87);   // Tranquility Base, near side
-    if (jd < TEI) {                                          // lunar orbit, ~2 h laps
-      const a = (jd - LOI) / 0.085 * 2 * Math.PI;
-      return mv.clone().add(new THREE.Vector3(Math.cos(a) * 0.2, 0.025, Math.sin(a) * 0.2));
+    const srf = () => mv.clone().multiplyScalar(0.87);
+    if (jd >= T.UNDOCK && jd < T.LAND) {                     // powered descent
+      const f = (jd - T.UNDOCK) / (T.LAND - T.UNDOCK);
+      return this._lunarOrbit(jd, mv).lerp(srf(), f * f);
     }
-    const f = (jd - TEI) / (SPL - TEI), e = f * f * (3 - 2 * f);   // trans-Earth coast
+    if (jd >= T.LAND && jd < T.LIFT) return srf();           // Tranquility Base
+    if (jd >= T.LIFT && jd < T.DOCK2) {                      // ascent & rendezvous
+      const f = (jd - T.LIFT) / (T.DOCK2 - T.LIFT);
+      return srf().lerp(this._lunarOrbit(jd, mv), Math.sqrt(f));
+    }
+    if (jd < T.TEI) return this._lunarOrbit(jd, mv);
+    const f = (jd - T.TEI) / (T.SPL - T.TEI), e = f * f * (3 - 2 * f);   // trans-Earth coast
     return mv.clone().multiplyScalar(0.84).lerp(new THREE.Vector3(0.42, 0.02, -0.38), e);
+  },
+
+  // Show/hide the named parts + fly the secondary craft per mission phase.
+  _apolloStage(jd) {
+    const A = this._ap, T = this._apT;
+    if (!A) return;
+    const lmPrimary = jd >= T.UNDOCK && jd < T.DOCK2;        // Eagle flies solo
+    A.sivb.visible = jd < T.TD;
+    A.cm.visible = !lmPrimary;
+    A.sm.visible = !lmPrimary && jd < T.SMJ;
+    A.bell.visible = !lmPrimary && jd < T.SMJ;
+    const lmAboard = jd >= T.TD && jd < T.LMJ;
+    A.lmDesc.visible = lmAboard && jd < T.LIFT;
+    A.lmAsc.visible = lmAboard;
+    const earthP = Orrery.meshes.earth.position;
+    const mv = Orrery.meshes.earth.children.find(c => c.userData.isMoon).position;
+    if (this.apCSM) {                                        // Columbia's lonely vigil
+      this.apCSM.visible = lmPrimary;
+      this.apCSM.userData.label.visible = lmPrimary;
+      if (lmPrimary) {
+        this.apCSM.position.copy(earthP).add(this._lunarOrbit(jd, mv, 2.2));
+        this.apCSM.lookAt(earthP);
+      }
+    }
+    if (this.apSIVB) {                                       // spent stage drifts off
+      const dr = jd - T.TD;
+      this.apSIVB.visible = dr >= 0 && dr < 1.1;
+      if (this.apSIVB.visible) {
+        const f = (jd - T.TLI) / (T.LOI - T.TLI), e = f * f * (3 - 2 * f);
+        const out = this._park((T.TLI - T.L) / 0.12 * 4 * Math.PI).lerp(_tmpV2.copy(mv).multiplyScalar(0.81), e * 0.88);
+        out.add(_tmpV.set(-mv.z, 0, mv.x).normalize().multiplyScalar(Math.sin(Math.PI * f) * 0.14 + dr * 0.16));
+        out.y += dr * 0.09;
+        this.apSIVB.position.copy(earthP).add(out);
+        this.apSIVB.lookAt(earthP);
+      }
+    }
+    if (this.apRelic) {                                      // descent stage: Tranquility, forever
+      this.apRelic.visible = jd >= T.LIFT;
+      if (this.apRelic.visible) this.apRelic.position.copy(earthP).add(_tmpV.copy(mv).multiplyScalar(0.872));
+    }
   },
 
   jdToPos(jd) {                                              // piecewise-linear through the baked segments
@@ -3757,6 +3863,27 @@ const Missions = {
       Orrery.scene.add(this.marker);
       Orrery.meshes.vgr2 = this.marker;                      // lets setFocus/_focusPos ride along
     }
+    if (kind === 'apollo' && !this.apCSM) {
+      const M = this._apolloParts();
+      const c = new THREE.Group();
+      const c1 = new THREE.Mesh(new THREE.ConeGeometry(0.026, 0.036, 14), M.shiny);
+      c1.rotation.x = -Math.PI / 2; c1.position.z = -0.03; c.add(c1);
+      const c2 = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, 0.055, 14), M.silver);
+      c2.rotation.x = Math.PI / 2; c2.position.z = 0.01; c.add(c2);
+      const clbl = makeLabel('Columbia', 'moon-label');
+      clbl.visible = false;
+      c.add(clbl);
+      c.userData.label = clbl;
+      c.visible = false;
+      Orrery.scene.add(c);
+      this.apCSM = c;
+      this.apSIVB = this._ap.sivb.clone();
+      this.apSIVB.visible = false;
+      Orrery.scene.add(this.apSIVB);
+      this.apRelic = this._buildLMDesc(M);
+      this.apRelic.visible = false;
+      Orrery.scene.add(this.apRelic);
+    }
     if (this.line) this.line.visible = true;
     this.marker.visible = true;
     this._evIdx = -1;
@@ -3775,6 +3902,8 @@ const Missions = {
     if (!this.active) return;
     this.active = null;
     if (this.line) { this.line.visible = false; this.marker.visible = false; this.marker.userData.label.visible = false; }
+    for (const o of [this.apCSM, this.apSIVB, this.apRelic]) if (o) o.visible = false;
+    if (this.apCSM) this.apCSM.userData.label.visible = false;
     if (Orrery.focusBody === 'vgr2') Orrery.setFocus(null);
     document.getElementById('orrery-info').classList.remove('open');
     Sim.ms = Date.now(); Sim.speedIdx = 3; refreshSpeedUI();
@@ -3787,6 +3916,7 @@ const Missions = {
         this.marker.visible = true;
         this.marker.position.copy(Orrery.meshes.earth.position).add(off);
         this.marker.lookAt(Orrery.meshes.earth.position);
+        this._apolloStage(Sim.jd);
       } else this.marker.visible = false;
     } else {
       const p = this.jdToPos(Sim.jd);
@@ -3917,7 +4047,7 @@ refreshSpeedUI();
 }
 window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
 
-window.__astro = { Orrery, Sky, Sim, predictISSPasses, get Loc() { return Loc; } };   // console/debug access
+window.__astro = { Orrery, Sky, Sim, predictISSPasses, Missions, get Loc() { return Loc; } };   // console/debug access
 
 function loop(now) {
   Sim.tick();
