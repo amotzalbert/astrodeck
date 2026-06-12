@@ -800,7 +800,8 @@
           <div class="help-row"><span class="icon">🔭</span><span><strong>Click any body</strong> — planet, moon, or ISS — to focus the camera on it and see a live info card with distances, orbital data, and facts. The camera rides along as it moves.</span></div>
           <div class="help-row"><span class="icon">🛸</span><span>The <strong>ISS</strong> is a live 3D model: SGP4-propagated from today's TLE. Its solar arrays track the Sun in real time. Click it for ground track and pass info.</span></div>
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
-          <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~160 brightest known objects in orbit (Hubble, Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth. Hubble and Tiangong get labels when Earth is focused.</span></div>
+          <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
+          <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
           <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
@@ -1220,12 +1221,40 @@ async function loadSatCatalog() {
     for (let i = 0; i + 2 < lines.length; i += 3) {
       const name = lines[i].trim(), l1 = lines[i + 1], l2 = lines[i + 2];
       if (!l1 || !l2 || l1[0] !== '1') break;
-      if (l1.slice(2, 7) === '25544') continue;              // ISS has its own layer
+      if (['25544', '20580', '25867', '25989'].includes(l1.slice(2, 7).trim())) continue;  // ISS + telescopes have their own layers
       out.push({ name, satrec: satellite.twoline2satrec(l1.trim(), l2.trim()) });
     }
     if (out.length) { satCatalog = out; Orrery.onSatsLoaded(); }
   } catch (err) { console.warn('satellite catalog unavailable', err); }
   satLoading = false;
+}
+
+// Space-telescopes layer: the great observatories, each with a 3D model and
+// its real orbit. Hubble in LEO; Chandra & XMM-Newton on wildly eccentric
+// multi-day orbits; JWST shown at Sun–Earth L2 (no TLE — placed analytically).
+const SCOPES = {
+  hst:     { id: '20580', label: 'Hubble',     color: 0x9bd7ff },
+  chandra: { id: '25867', label: 'Chandra',    color: 0xffb36b },
+  xmm:     { id: '25989', label: 'XMM-Newton', color: 0xc4a7ff },
+  jwst:    { id: null,    label: 'JWST · L2',  color: 0xffd98a },
+};
+let scopesLoaded = false, scopesLoading = false;
+async function loadScopes() {
+  if (scopesLoaded || scopesLoading || typeof satellite === 'undefined') return;
+  scopesLoading = true;
+  const jobs = Object.entries(SCOPES).filter(([, s]) => s.id).map(async ([key, s]) => {
+    const txt = await (await fetch(`https://celestrak.org/NORAD/elements/gp.php?CATNR=${s.id}&FORMAT=TLE`)).text();
+    const lines = txt.trim().split(/\r?\n/);
+    if (lines.length < 3 || lines[1][0] !== '1') throw new Error(key + ': bad TLE');
+    s.satrec = satellite.twoline2satrec(lines[1].trim(), lines[2].trim());
+  });
+  const results = await Promise.allSettled(jobs);
+  results.forEach(r => { if (r.status === 'rejected') console.warn('scope TLE failed', r.reason); });
+  if (Object.values(SCOPES).some(s => s.satrec)) {
+    scopesLoaded = true;
+    Orrery.onScopesLoaded();
+  }
+  scopesLoading = false;
 }
 
 // Is the ISS in sunlight? (cylindrical Earth-shadow model)
@@ -1335,7 +1364,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false,
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1533,6 +1562,12 @@ const Orrery = {
           this.satPoints.visible = v;
           if (satCatalog) for (const s of satCatalog) if (s.labelObj) s.labelObj.visible = v && this._satLabelsOn;
         } },
+      { label: 'Space telescopes', get: () => this.showScopes, set: v => {
+          this.showScopes = v;
+          if (v) loadScopes();                                 // lazy TLE fetch on first enable
+          if (this.scopeGroup) this.scopeGroup.visible = v;
+          for (const s of Object.values(SCOPES)) if (s.labelObj) s.labelObj.visible = v && !!this._satLabelsOn;
+        } },
       { label: 'Moons & rings', get: () => this.showMoons, set: v => {
           this.showMoons = v;                                  // Earth's Moon stays — it's family
           for (const m of Object.values(this.moonMeshes)) m.visible = v;
@@ -1722,6 +1757,147 @@ const Orrery = {
     attr.needsUpdate = true;
   },
 
+  // Low-poly observatory models. Built aperture-toward−z, so lookAt(Sun)
+  // points the optics *away* from the Sun — as real telescopes insist.
+  _buildScopeModel(kind) {
+    const g = new THREE.Group();
+    const silver = new THREE.MeshStandardMaterial({ color: 0xd9dee8, roughness: 0.35, metalness: 0.6 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x39414f, roughness: 0.6, metalness: 0.3 });
+    const panel = new THREE.MeshStandardMaterial({ color: 0x2e4f8f, roughness: 0.45, metalness: 0.35, emissive: 0x0a1530, side: THREE.DoubleSide });
+    const gold = new THREE.MeshStandardMaterial({ color: 0xd9b24a, roughness: 0.32, metalness: 0.8, emissive: 0x3a2a06, side: THREE.DoubleSide });
+    const tube = (r1, r2, len, mat, z) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 20), mat);
+      m.rotation.x = Math.PI / 2;
+      m.position.z = z || 0;
+      g.add(m);
+      return m;
+    };
+    const wing = (w, h, x, mat) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.0015), mat || panel);
+      m.position.x = x;
+      g.add(m);
+      return m;
+    };
+    if (kind === 'hst') {
+      tube(0.021, 0.021, 0.1, silver, -0.01);
+      tube(0.025, 0.025, 0.034, dark, 0.05);                 // aft shroud (sun side)
+      tube(0.0215, 0.0215, 0.014, dark, -0.062);             // aperture rim
+      wing(0.052, 0.026, 0.042);
+      wing(0.052, 0.026, -0.042);
+    } else if (kind === 'chandra') {
+      tube(0.026, 0.01, 0.125, silver);                      // tapered: mirrors at the wide front
+      tube(0.027, 0.027, 0.02, dark, -0.07);
+      const w1 = wing(0.05, 0.022, 0.045); w1.rotation.y = -0.5; w1.position.z = 0.04;
+      const w2 = wing(0.05, 0.022, -0.045); w2.rotation.y = 0.5; w2.position.z = 0.04;
+    } else if (kind === 'xmm') {
+      tube(0.02, 0.02, 0.115, gold);                         // famous gold MLI wrap
+      tube(0.023, 0.023, 0.022, dark, 0.064);
+      wing(0.05, 0.024, 0.04);
+      wing(0.05, 0.024, -0.04);
+    } else {                                                 // jwst
+      for (const [z, rz] of [[0.012, 0.22], [0.018, -0.16]]) {
+        const sh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.064, 0.0008), silver);
+        sh.position.z = z;
+        sh.rotation.z = rz;                                  // layered kite sunshield
+        g.add(sh);
+      }
+      const mirror = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.004, 6), gold);
+      mirror.rotation.x = Math.PI / 2 - 0.25;
+      mirror.position.z = -0.012;
+      g.add(mirror);
+      tube(0.003, 0.003, 0.03, dark, -0.03);                 // secondary-mirror mast
+    }
+    return g;
+  },
+
+  onScopesLoaded() {
+    const node = this.meshes.earth;
+    this.scopeGroup = new THREE.Group();
+    this.scopeGroup.visible = this.showScopes;
+    node.add(this.scopeGroup);
+    for (const [key, s] of Object.entries(SCOPES)) {
+      if (key !== 'jwst' && !s.satrec) continue;             // TLE fetch failed → skip gracefully
+      s.model = this._buildScopeModel(key);
+      this.scopeGroup.add(s.model);
+      const label = makeLabel(s.label, 'moon-label');
+      label.visible = this.showScopes && !!this._satLabelsOn;
+      this.scopeGroup.add(label);
+      s.labelObj = label;
+      let geo;
+      if (key === 'jwst') {                                  // halo-orbit ring around L2
+        const pts = [];
+        for (let k = 0; k <= 96; k++) {
+          const a = k / 96 * 2 * Math.PI;
+          pts.push(new THREE.Vector3(Math.cos(a) * 0.5, Math.sin(a) * 0.5, 0));
+        }
+        geo = new THREE.BufferGeometry().setFromPoints(pts);
+      } else {
+        geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(129 * 3), 3));
+      }
+      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: s.color, transparent: true, opacity: 0.55 }));
+      line.userData.isOrbit = true;
+      line.visible = false;
+      this.scopeGroup.add(line);
+      s.orbit = line;
+    }
+  },
+
+  // Display shell for telescopes: gentler exponent than the ISS shell so the
+  // wildly eccentric Chandra/XMM orbits keep a readable elliptical shape.
+  _scopePos(p, eps, out) {
+    const rkm = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    const f = Math.min(4.4, 1 + 0.42 * Math.pow(Math.max(rkm - 6371, 200) / 420, 0.30));
+    return this._eciToScene(p, eps, out).normalize().multiplyScalar(PLANET_META.earth.size * f);
+  },
+
+  updateScopes(d) {
+    if (!scopesLoaded || !this.scopeGroup) return;
+    this.scopeGroup.visible = this.showScopes;
+    if (!this.showScopes) return;
+    const fresh = Math.abs(Sim.ms - Date.now()) < 45 * 86400000;
+    const eps = obliquity(d);
+    const labelsOn = !!this._satLabelsOn;
+    for (const [key, s] of Object.entries(SCOPES)) {
+      if (!s.model) continue;
+      if (key === 'jwst') {
+        const n = _tmpV2.copy(this.meshes.earth.position).normalize();   // anti-Sun direction
+        s.model.position.copy(n).multiplyScalar(PLANET_META.earth.size * 4.0);
+        s.model.lookAt(ORIGIN);
+        s.orbit.position.copy(s.model.position);
+        _tmpV.copy(this.meshes.earth.position).add(s.orbit.position).add(n);
+        s.orbit.lookAt(_tmpV);                               // ring faces along the Sun line
+        s.orbit.visible = this.showOrbits;
+        s.labelObj.position.copy(s.model.position);
+        s.labelObj.visible = labelsOn;
+        continue;
+      }
+      const pv = fresh ? satellite.propagate(s.satrec, Sim.date) : null;
+      const p = pv && pv.position;
+      const ok = !!(p && isFinite(p.x));
+      s.model.visible = ok;
+      s.orbit.visible = ok && this.showOrbits;
+      s.labelObj.visible = ok && labelsOn;
+      if (!ok) continue;
+      s.model.position.copy(this._scopePos(p, eps, _tmpV));
+      s.model.lookAt(ORIGIN);                                // optics away from the Sun
+      s.labelObj.position.copy(s.model.position);
+      if (s._orbT == null || Math.abs(Sim.ms - s._orbT) > 30 * 60000) {
+        s._orbT = Sim.ms;
+        const attr = s.orbit.geometry.attributes.position;
+        const periodMs = (2 * Math.PI / s.satrec.no) * 60000;
+        for (let k = 0; k <= 128; k++) {
+          const pv2 = satellite.propagate(s.satrec, new Date(Sim.ms + (k / 128) * periodMs));
+          if (pv2 && pv2.position && isFinite(pv2.position.x)) {
+            this._scopePos(pv2.position, eps, _tmpV);
+            attr.setXYZ(k, _tmpV.x, _tmpV.y, _tmpV.z);
+          }
+        }
+        attr.needsUpdate = true;
+      }
+    }
+  },
+
   // Galaxy backdrop: the shared Milky Way point cloud on a distant sphere,
   // rotated from the equatorial frame into the scene's ecliptic frame — the
   // band crosses at its true 60° tilt, core fixed toward Sagittarius.
@@ -1903,6 +2079,7 @@ const Orrery = {
     if (this.issDot) this.issDot.userData.label.visible = system === 'earth';
     this._satLabelsOn = system === 'earth';
     if (satCatalog) for (const s of satCatalog) if (s.labelObj) s.labelObj.visible = this.showSats && this._satLabelsOn;
+    for (const s of Object.values(SCOPES)) if (s.labelObj) s.labelObj.visible = this.showScopes && this._satLabelsOn;
   },
 
   // World-space position of the current focus target (moons are nested in groups)
@@ -1958,6 +2135,7 @@ const Orrery = {
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
     this.updateISS(d);
     this.updateSats(d);
+    this.updateScopes(d);
     this.updateGravityGrid();
     // Moons: real Kepler propagation, true direction, display-scaled radius
     for (const [mname, mdef] of Object.entries(MOONS)) {
