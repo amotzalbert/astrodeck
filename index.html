@@ -1563,15 +1563,24 @@ const Orrery = {
         .filter(h => h.object.visible);                        // hidden moons/ISS shouldn't catch clicks
       if (hits.length) {
         const body = hits[0].object.userData.body;
-        showBodyInfo(body, 'orrery-info', () => { this.highlightOrbit(null); this.setFocus(null); });
+        showBodyInfo(body, 'orrery-info', null);             // closing the card keeps the focus
         this.highlightOrbit(this.orbits[body] ? body : null);
         this.setFocus(this.meshes[body] || MOONS[body] || body === 'moon' || body === 'iss' ? body : null);  // sun → heliocentric
       } else {
-        document.getElementById('orrery-info').classList.remove('open');
-        this.highlightOrbit(null);
-        this.setFocus(null);
+        document.getElementById('orrery-info').classList.remove('open');   // empty space: tidy up, stay put
       }
     });
+
+    const resetBtn = document.createElement('button');
+    resetBtn.className = 'toggle-pill';
+    resetBtn.innerHTML = `<span style="font-size:13px;line-height:0">⟲</span>Sun view`;
+    resetBtn.title = 'Release focus and return to the whole solar system';
+    resetBtn.onclick = () => {
+      this.setFocus(null);
+      this.highlightOrbit(null);
+      document.getElementById('orrery-info').classList.remove('open');
+    };
+    document.getElementById('orrery-toggles').appendChild(resetBtn);
 
     buildToggles('orrery-toggles', [
       { label: 'Orbit paths', get: () => this.showOrbits, set: v => { this.showOrbits = v; this.scene.traverse(o => { if (o.userData.isOrbit) o.visible = v; }); } },
