@@ -3762,7 +3762,7 @@ const Missions = {
     this._evIdx = -1;
     Sim.ms = (m.events[0].jd - 2440587.5) * 86400000;
     this.marker.userData.label.element.textContent = m.name;
-    Sim.speedIdx = SPEEDS.findIndex(sp => sp.f === m.speed);
+    Sim.speedIdx = SPEEDS.findIndex(sp => sp.f === Math.min(m.speed, 86400));   // start gentle — the ⏭ button is right there
     Sim.paused = false;
     refreshSpeedUI();
     document.querySelector('#tabs button[data-view="orrery"]').click();
