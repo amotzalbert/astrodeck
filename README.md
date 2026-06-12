@@ -39,6 +39,9 @@ A single-file, real-time 3D night-sky app. No build, no install, no account — 
 - Atmosphere toggle (day/twilight/night sky tinting + star fading — off by default), ground & cardinal markers
 - Star/constellation labels fade in daylight
 
+### 🚀 Mission Replays
+- **Voyager 2 Grand Tour** — fly the real 1977–1989 trajectory (baked JPL Horizons ephemeris) from launch through all four giant-planet flybys to interstellar space, with story cards at every milestone
+
 ### 🔭 Telescope Feeds
 - **Earth from the ISS — live 4K** (Sen, 24/7 stream)
 - **The Sun right now** — SDO corona (193 Å) & visible light, SOHO coronagraph — auto-refreshing public-domain imagery
