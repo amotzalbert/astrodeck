@@ -356,6 +356,14 @@
     text-align: center; white-space: nowrap;
   }
 
+  #true-scale-banner {
+    position: absolute; left: 14px; top: 14px;
+    width: min(900px, calc(100% - 320px));
+    pointer-events: none; opacity: 0; z-index: 18;
+    transition: opacity .35s;
+  }
+  @media (max-width: 760px) { #true-scale-banner { display: none; } }
+
   /* ---------- Location modal ---------- */
   .modal-backdrop {
     position: fixed; inset: 0;
@@ -675,6 +683,7 @@
     <div class="info-card" id="orrery-info"></div>
     <div class="hint">Drag to orbit · Scroll to zoom · Click a planet for details</div>
     <div class="toggle-stack" id="orrery-toggles"></div>
+    <canvas id="true-scale-banner" width="1312" height="300"></canvas>
   </section>
 
   <!-- ============ SKY VIEW ============ -->
@@ -1983,6 +1992,7 @@ const Orrery = {
     if (this.earthHalo) this.earthHalo.visible = vis;
     for (const g of this.magFields) g.visible = vis && this.showMag;
     if (this.satPoints) this.satPoints.visible = vis && this.showSats;
+    document.getElementById('true-scale-banner').style.opacity = (u * 0.95).toFixed(2);
     this._rebuildOrbits();
   },
 
@@ -3680,6 +3690,76 @@ function buildMissions() {
 
 }
 buildMissions();
+
+/* ---- True-scale banner: the Sun's limb + all eight planets at honest relative
+   diameters, pale neon blue line art. Drawn once; fades in with the morph. ---- */
+(function drawTrueScaleBanner() {
+  const cv = document.getElementById('true-scale-banner'), ctx = cv.getContext('2d');
+  ctx.scale(2, 2);
+  const W = 656, H = 150, k = 0.00042, cy = 78;
+  const stroke = 'rgba(160,220,255,.95)', fill = 'rgba(110,190,255,.14)', dim = 'rgba(150,210,255,.65)';
+  ctx.fillStyle = 'rgba(4,6,13,.78)';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(150,215,255,.25)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+  ctx.shadowColor = 'rgba(120,200,255,.7)';
+  const sunR = 1392700 * k / 2;
+  ctx.shadowBlur = 10;
+  ctx.beginPath();
+  ctx.arc(70 - sunR + 62, cy, sunR, 0, 7);
+  ctx.fillStyle = 'rgba(120,200,255,.10)';
+  ctx.fill();
+  ctx.strokeStyle = stroke;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  try { ctx.letterSpacing = '1.5px'; } catch (e) {}
+  const lbl = (t, x, y, sz, col) => {
+    ctx.font = '600 ' + sz + 'px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+    ctx.fillStyle = col || dim;
+    ctx.fillText(t, x, y);
+  };
+  lbl('SUN', 8, 20, 9, stroke);
+  lbl('1,392,700 KM', 8, 32, 7.5);
+  const P = [
+    ['MERCURY', 4879, 116, 1], ['VENUS', 12104, 156, -1], ['EARTH', 12756, 198, 1], ['MARS', 6792, 238, -1],
+    ['JUPITER', 142984, 318, 1], ['SATURN', 120536, 438, -1], ['URANUS', 51118, 540, 1], ['NEPTUNE', 49528, 608, -1],
+  ];
+  for (const [n, dkm, x, side] of P) {
+    const r = Math.max(dkm * k / 2, 1);
+    if (n === 'SATURN') {
+      ctx.strokeStyle = dim;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.ellipse(x, cy, r * 1.95, r * 0.55, -0.35, 0, 7);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 7;
+    ctx.beginPath();
+    ctx.arc(x, cy, r, 0, 7);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    const ly = side > 0 ? cy - r - 26 : cy + r + 18;
+    ctx.strokeStyle = 'rgba(150,210,255,.4)';
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(x, side > 0 ? cy - r - 3 : cy + r + 3);
+    ctx.lineTo(x, side > 0 ? ly + 5 : ly - 9);
+    ctx.stroke();
+    ctx.textAlign = 'center';
+    lbl(n, x, ly, 8, stroke);
+    lbl(dkm.toLocaleString() + ' KM', x, ly + 10, 7);
+    ctx.textAlign = 'left';
+  }
+  ctx.textAlign = 'right';
+  lbl('TRUE SCALE — APPROXIMATE DIAMETERS', W - 10, H - 10, 7.5, 'rgba(150,210,255,.5)');
+  ctx.textAlign = 'left';
+})();
 
 /* ---- Boot ---- */
 refreshLocChip();
