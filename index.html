@@ -802,6 +802,7 @@
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
+          <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
           <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
@@ -887,8 +888,9 @@ const sunElements = d => [0, 0, 282.9404 + 4.70935e-5*d, 1.000000, 0.016709 - 1.
 const moonElements = d => [125.1228 - 0.0529538083*d, 5.1454, 318.0634 + 0.1643573223*d, 60.2666, 0.054900, 115.3654 + 13.0649929509*d];
 
 function solveKepler(M, e) {                                 // M in degrees → E in degrees
-  let E = M + (e * 180 / Math.PI) * Math.sin(M * DEG) * (1 + e * Math.cos(M * DEG));
-  for (let k = 0; k < 8; k++) {
+  // High-e (comets): Newton from E=180° converges globally; Schlyter seed otherwise
+  let E = e > 0.8 ? 180 : M + (e * 180 / Math.PI) * Math.sin(M * DEG) * (1 + e * Math.cos(M * DEG));
+  for (let k = 0; k < 40; k++) {
     const dE = (E - (e * 180 / Math.PI) * Math.sin(E * DEG) - M) / (1 - e * Math.cos(E * DEG));
     E -= dE;
     if (Math.abs(dE) < 1e-6) break;
@@ -1346,7 +1348,22 @@ function maybeShowPassBanner() {
   }
 }
 const ORRERY_SCALE = 11;
-const scaleDist = rAU => ORRERY_SCALE * Math.pow(rAU, 0.45);
+// True-scale morph: 0 = compressed display scale, 1 = honest linear scale
+// (1 AU = 1.7 units puts Neptune right where the compressed view had it).
+let SCALE_MORPH = 0;
+const TRUE_AU_UNITS = 1.7;
+const TRUE_RADII = {                                          // km
+  mercury: 2440, venus: 6052, earth: 6371, mars: 3390,
+  jupiter: 69911, saturn: 58232, uranus: 25362, neptune: 24622,
+};
+const scaleDist = rAU => {
+  const comp = ORRERY_SCALE * Math.pow(rAU, 0.45);
+  return SCALE_MORPH ? comp + (rAU * TRUE_AU_UNITS - comp) * SCALE_MORPH : comp;
+};
+
+// 1P/Halley — osculating elements around the 1986 apparition; retrograde, e≈0.967.
+// dPeri = perihelion 1986 Feb 9 in Schlyter day-numbers (JD − 2451543.5).
+const HALLEY = { N: 58.42, i: 162.26, w: 111.33, a: 17.834, e: 0.96714, n: 0.0130858, dPeri: -5072.5 };
 // Map Schlyter ecliptic (x,y,z; z = ecliptic north) → three.js (y-up) with compression
 function eclToScene(p) {
   const r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) || 1e-9;
@@ -1368,6 +1385,7 @@ const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
   showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false,
+  trueTarget: 0, _helioR: {}, _orbitRaw: {},
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1501,6 +1519,7 @@ const Orrery = {
         }));
         halo.scale.setScalar(2.6);
         node.add(halo);
+        this.earthHalo = halo;
       }
       const label = makeLabel(name[0].toUpperCase() + name.slice(1), 'planet');
       node.add(label);
@@ -1511,13 +1530,15 @@ const Orrery = {
 
       // Orbit path sampled over one period
       const elFn = name === 'earth' ? sunElements : ELEMENTS[name];
-      const pts = [];
+      const pts = [], raw = [];
       const d0 = Sim.d;
       const period = { mercury: 88, venus: 225, earth: 365, mars: 687, jupiter: 4333, saturn: 10759, uranus: 30687, neptune: 60190 }[name];
       for (let k = 0; k <= 256; k++) {
         const p = orbitalToEcliptic(elFn(d0 + (k / 256) * period));
+        raw.push(p);
         pts.push(eclToScene(p));
       }
+      this._orbitRaw[name] = raw;
       const orbit = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(pts),
         new THREE.LineBasicMaterial({ color: name === 'earth' ? 0x5eead4 : 0x8aa6cc, transparent: true, opacity: 0.75 })
@@ -1593,11 +1614,19 @@ const Orrery = {
           if (v) this._gravT = null;                           // force a sheet rebuild now
         } },
       { label: 'Milky Way', get: () => this.showMW, set: v => { this.showMW = v; this.mwGroup.visible = v; } },
+      { label: 'True scale', get: () => !!this.trueTarget, set: v => { this.trueTarget = v ? 1 : 0; } },
     ]);
+    const pingBtn = document.createElement('button');
+    pingBtn.className = 'toggle-pill';
+    pingBtn.innerHTML = `<span style="font-size:12px;line-height:0">✦</span>Light ping`;
+    pingBtn.title = 'Send a pulse of light from the Sun at real light-speed (sim time)';
+    pingBtn.onclick = () => this.startPing();
+    document.getElementById('orrery-toggles').appendChild(pingBtn);
     this.addMagFields();
     this.addGravityGrid();
     this.addMilkyWay();
     this.addSatLayer();
+    this.addHalley();
 
     // Sun light dimmer
     const dimmer = document.createElement('div');
@@ -1682,7 +1711,7 @@ const Orrery = {
   updateISS(d) {
     if (!this.issDot) return;
     const pv = issState(Sim.date);
-    const show = this.showISS && !!pv;
+    const show = this.showISS && !!pv && SCALE_MORPH < 0.02;
     this.issDot.visible = show;
     this.issOrbit.visible = show && this.showOrbits;
     if (!show) return;
@@ -1758,6 +1787,174 @@ const Orrery = {
     }
     this.satPoints.geometry.setDrawRange(0, n);
     attr.needsUpdate = true;
+  },
+
+  // ---- Halley's Comet ----
+  _halleyPosFromE(Edeg) {
+    const H = HALLEY;
+    const xv = H.a * (Math.cos(Edeg * DEG) - H.e);
+    const yv = H.a * Math.sqrt(1 - H.e * H.e) * Math.sin(Edeg * DEG);
+    const v = Math.atan2(yv, xv), r = Math.hypot(xv, yv);
+    const vw = v + H.w * DEG, Nr = H.N * DEG, ir = H.i * DEG;
+    return {
+      x: r * (Math.cos(Nr) * Math.cos(vw) - Math.sin(Nr) * Math.sin(vw) * Math.cos(ir)),
+      y: r * (Math.sin(Nr) * Math.cos(vw) + Math.cos(Nr) * Math.sin(vw) * Math.cos(ir)),
+      z: r * Math.sin(vw) * Math.sin(ir),
+    };
+  },
+
+  addHalley() {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xdcebf5, roughness: 0.6, metalness: 0.05, emissive: 0x1d2c3a })
+    );
+    mesh.userData.body = 'halley';
+    const label = makeLabel('Halley', 'planet');
+    mesh.add(label);
+    mesh.userData.label = label;
+    this.scene.add(mesh);
+    this.meshes.halley = mesh;
+    this.clickables.push(mesh);
+    const tailGeo = new THREE.ConeGeometry(0.16, 1, 14, 1, true);
+    tailGeo.translate(0, -0.5, 0);                           // apex at the nucleus, flaring −y
+    this.halleyTail = new THREE.Mesh(tailGeo, new THREE.MeshBasicMaterial({
+      color: 0x9fd8ff, transparent: true, opacity: 0.25,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    }));
+    this.halleyTail.visible = false;
+    mesh.add(this.halleyTail);
+    // Orbit sampled uniformly in eccentric anomaly → dense near perihelion where it matters
+    this._halleyRaw = [];
+    for (let k = 0; k <= 256; k++) this._halleyRaw.push(this._halleyPosFromE(k / 256 * 360));
+    this.halleyOrbit = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(this._halleyRaw.map(eclToScene)),
+      new THREE.LineBasicMaterial({ color: 0x9adcf0, transparent: true, opacity: 0.45 })
+    );
+    this.halleyOrbit.userData.isOrbit = true;
+    this.halleyOrbit.visible = this.showOrbits;
+    this.scene.add(this.halleyOrbit);
+  },
+
+  updateHalley(d) {
+    if (!this.meshes.halley) return;
+    const E = solveKepler(rev(HALLEY.n * (d - HALLEY.dPeri)), HALLEY.e);
+    const p = this._halleyPosFromE(E);
+    const mesh = this.meshes.halley;
+    mesh.position.copy(eclToScene(p));
+    const r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    this._helioR.halley = r;
+    mesh.scale.setScalar(Math.max(1e-4, 1 - SCALE_MORPH * 0.9995));
+    const t = this.halleyTail;
+    if (r < 4 && SCALE_MORPH < 0.02) {                       // ion tail grows sunward of ~4 AU
+      t.visible = true;
+      const L = (4 - r) / 3.4;
+      t.scale.set(0.5 + L * 0.6, Math.max(0.25, L * 2.8), 0.5 + L * 0.6);
+      t.material.opacity = 0.08 + 0.32 * L;
+      _tmpV.copy(mesh.position).normalize();                 // tail points anti-Sun, always
+      t.quaternion.setFromUnitVectors(_tmpV2.set(0, -1, 0), _tmpV);
+    } else t.visible = false;
+  },
+
+  // ---- Light ping: a pulse leaves the Sun at real c (in sim time) ----
+  startPing() {
+    if (!this.pingRing) {
+      const pts = [];
+      for (let k = 0; k <= 128; k++) {
+        const a = k / 128 * 2 * Math.PI;
+        pts.push(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)));
+      }
+      this.pingRing = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color: 0xffd27d, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+      this.pingLabel = makeLabel('', 'planet');
+      this.pingLabel.element.style.color = '#ffd27d';
+      this.pingLabel.position.set(1.04, 0, 0);
+      this.pingRing.add(this.pingLabel);
+      this.scene.add(this.pingRing);
+    }
+    if (this.ping) this._restorePingLabels();
+    this.ping = { t0: Sim.ms, prevIdx: Sim.speedIdx, prevPaused: Sim.paused, autoSpeed: false, hits: {} };
+    if (SPEEDS[Sim.speedIdx].f < 600) {                      // make the wait watchable: 10 min/s
+      Sim.speedIdx = 5; Sim.paused = false; this.ping.autoSpeed = true; refreshSpeedUI();
+    }
+    this.pingRing.visible = true;
+    this.pingLabel.visible = true;
+  },
+
+  _restorePingLabels() {
+    for (const name of Object.keys(this.ping.hits)) {
+      const lbl = this.meshes[name].userData.label;
+      lbl.element.textContent = name[0].toUpperCase() + name.slice(1);
+      lbl.element.style.color = '';
+    }
+  },
+
+  endPing() {
+    this._restorePingLabels();
+    if (this.ping.autoSpeed && Sim.speedIdx === 5) {         // give back the user's speed
+      Sim.speedIdx = this.ping.prevIdx; Sim.paused = this.ping.prevPaused; refreshSpeedUI();
+    }
+    this.ping = null;
+    this.pingRing.visible = false;
+    this.pingLabel.visible = false;
+  },
+
+  updatePing() {
+    if (!this.ping) return;
+    const el = (Sim.ms - this.ping.t0) / 1000;               // elapsed sim-seconds
+    if (el < 0) return this.endPing();                       // time ran backwards
+    const dAU = el / 499.005;                                // light: 1 AU per 499 s
+    if (dAU > 33) return this.endPing();
+    this.pingRing.scale.setScalar(Math.max(scaleDist(dAU), 0.01));
+    const mins = el / 60;
+    this.pingLabel.element.textContent =
+      (mins < 100 ? mins.toFixed(1) + ' MIN' : (mins / 60).toFixed(2) + ' HR') + ' · ' + dAU.toFixed(2) + ' AU';
+    for (const name of PLANET_NAMES) {
+      if (!this.ping.hits[name] && this._helioR[name] && dAU >= this._helioR[name]) {
+        this.ping.hits[name] = true;
+        const lbl = this.meshes[name].userData.label;
+        lbl.element.style.color = '#ffd27d';
+        lbl.element.textContent = `${name[0].toUpperCase() + name.slice(1)} · ${Math.round(this._helioR[name] * 499.005 / 60)} min`;
+      }
+    }
+  },
+
+  // ---- True-scale morph ----
+  _rebuildOrbits() {
+    for (const [name, orbit] of Object.entries(this.orbits)) {
+      const raw = this._orbitRaw[name], attr = orbit.geometry.attributes.position;
+      for (let k = 0; k < raw.length; k++) {
+        const v = eclToScene(raw[k]);
+        attr.setXYZ(k, v.x, v.y, v.z);
+      }
+      attr.needsUpdate = true;
+    }
+    if (this.halleyOrbit) {
+      const attr = this.halleyOrbit.geometry.attributes.position;
+      for (let k = 0; k < this._halleyRaw.length; k++) {
+        const v = eclToScene(this._halleyRaw[k]);
+        attr.setXYZ(k, v.x, v.y, v.z);
+      }
+      attr.needsUpdate = true;
+    }
+  },
+
+  _applyScaleMorph() {
+    const u = SCALE_MORPH, vis = u < 0.02;
+    for (const [name, meta] of Object.entries(PLANET_META)) {
+      const trueR = TRUE_RADII[name] / 149597870.7 * TRUE_AU_UNITS;
+      const fac = Math.max(1e-4, 1 + (trueR / meta.size - 1) * u);
+      const ball = this.spinMeshes[name] || (name === 'earth' ? this.earthSpin : this.meshes[name]);
+      ball.scale.setScalar(fac);
+    }
+    this.sunMesh.scale.setScalar(Math.max(1e-3, 1 + (0.0079 / 2.6 - 1) * u));
+    this.sunGlow.scale.setScalar(9 * Math.max(0.05, 1 - u * 0.95));   // keep a findable spark
+    for (const m of Object.values(this.moonMeshes)) m.visible = vis && this.showMoons;
+    const em = this.meshes.earth.children.find(c => c.userData.isMoon);
+    if (em) em.visible = vis;
+    if (this.earthHalo) this.earthHalo.visible = vis;
+    for (const g of this.magFields) g.visible = vis && this.showMag;
+    if (this.satPoints) this.satPoints.visible = vis && this.showSats;
+    this._rebuildOrbits();
   },
 
   // Low-poly observatory models. Built aperture-toward−z, so lookAt(Sun)
@@ -1856,8 +2053,8 @@ const Orrery = {
 
   updateScopes(d) {
     if (!scopesLoaded || !this.scopeGroup) return;
-    this.scopeGroup.visible = this.showScopes;
-    if (!this.showScopes) return;
+    this.scopeGroup.visible = this.showScopes && SCALE_MORPH < 0.02;
+    if (!this.scopeGroup.visible) return;
     const fresh = Math.abs(Sim.ms - Date.now()) < 45 * 86400000;
     const eps = obliquity(d);
     const labelsOn = !!this._satLabelsOn;
@@ -2161,10 +2358,17 @@ const Orrery = {
 
   update() {
     const d = Sim.d;
+    const tgt = this.trueTarget;
+    if (SCALE_MORPH !== tgt) {                               // ease toward true/display scale
+      SCALE_MORPH += Math.sign(tgt - SCALE_MORPH) * Math.min(Math.abs(tgt - SCALE_MORPH), 0.02);
+      if (Math.abs(tgt - SCALE_MORPH) < 0.001) SCALE_MORPH = tgt;
+      this._applyScaleMorph();
+    }
     for (const name of PLANET_NAMES) {
       const p = name === 'earth'
         ? (() => { const s = sunGeo(d); return { x: -s.x, y: -s.y, z: -s.z }; })()
         : helio(name, d);
+      this._helioR[name] = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
       this.meshes[name].position.copy(eclToScene(p));
       if (name === 'earth') this.orientEarth(d);
       else (this.spinMeshes[name] || this.meshes[name]).rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
@@ -2173,6 +2377,8 @@ const Orrery = {
     this.updateISS(d);
     this.updateSats(d);
     this.updateScopes(d);
+    this.updateHalley(d);
+    this.updatePing();
     this.updateGravityGrid();
     // Moons: real Kepler propagation, true direction, display-scaled radius
     for (const [mname, mdef] of Object.entries(MOONS)) {
@@ -2237,6 +2443,15 @@ function showBodyInfo(body, cardId, onClose) {
       rows = row('Position', 'unavailable for this date');
     }
     fact = 'The largest structure humanity has placed in space, the size of a football field — position computed live from today’s orbital elements (SGP4).';
+  } else if (body === 'halley') {
+    title = "Halley's Comet"; kind = 'Periodic comet · 1P';
+    const r = Orrery._helioR.halley || 35;
+    rows = row('Distance from Sun', r.toFixed(2) + ' AU')
+         + row('Orbital period', '~76 years')
+         + row('Last perihelion', 'Feb 1986')
+         + row('Next perihelion', 'Jul 2061')
+         + row('Orbit', 'retrograde · tilted 162°');
+    fact = 'The first comet recognised as periodic — Edmond Halley predicted its 1758 return, 16 years after his death. Time-machine to July 2061 to watch it round the Sun, tail streaming away.';
   } else if (MOONS[body]) {
     const m = MOONS[body];
     title = body[0].toUpperCase() + body.slice(1);

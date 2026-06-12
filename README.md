@@ -20,6 +20,9 @@ A single-file, real-time 3D night-sky app. No build, no install, no account — 
 - **🧲 Mag fields toggle** — dipole field lines for the six planets with global fields, at their real tilts (Earth 11.5°, Uranus 59°, Neptune 47°); Venus & Mars correctly show none
 - **🌀 Gravity grid toggle** — a spacetime rubber-sheet under the ecliptic: the Sun digs a deep funnel, every planet dents it, and the wells ride along as the planets orbit
 - Sun **light dimmer** (0–200%), orbit-path & label toggles
+- **✦ Light ping** — fire a pulse from the Sun at real light-speed; planets light up with their light-times as it passes (8 min to Earth, 4 hours to Neptune)
+- **True scale toggle** — morph to honest sizes and distances and watch the solar system vanish into the void
+- **Halley's Comet** on its real retrograde orbit, ion tail inside 4 AU — time-machine to July 2061 for the show
 - Time machine: pause, ±speeds from −1 day/s to +1 week/s, jump to any date
 
 ### 🌌 Sky View (planetarium)
