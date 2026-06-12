@@ -3482,6 +3482,19 @@ const MISSIONS = {
       { jd: 2460668.5, t: 'Closest approach ever', d: 'Dec 24 2024 — 6.1 million km from the surface at 692,000 km/h. Watch the orbit whip around perihelion.' },
     ],
   },
+  apollo11: {
+    name: 'Apollo 11', year: '1969', icon: '🌙', custom: 'apollo11', craft: 'apollo', speed: 21600,
+    desc: 'Eight days in July 1969 — the first crewed landing on another world, replayed on its real timeline. Reconstructed geometry, real dates.',
+    events: [
+      { jd: 2440419.064, t: 'Launch', d: 'Jul 16 1969, 13:32 UTC — a Saturn V, still the most powerful rocket ever flown, climbs out of Florida with three men on top.' },
+      { jd: 2440419.18, t: 'Translunar injection', d: 'Two hours and one parking orbit later, the third stage relights for six minutes — goodbye Earth, hello a three-day coast.' },
+      { jd: 2440422.22, t: 'Lunar orbit insertion', d: 'Jul 19, 17:22 UTC — burning behind the Moon, out of contact with Earth, Columbia and Eagle slip into lunar orbit.' },
+      { jd: 2440423.345, t: 'The Eagle has landed', d: 'Jul 20, 20:17 UTC — Armstrong flies past boulders to a smooth spot in Mare Tranquillitatis with ~25 seconds of fuel left.' },
+      { jd: 2440424.122, t: 'One small step', d: 'Jul 21, 02:56 UTC — 600 million people watch a boot press into lunar dust. Aldrin follows; Collins keeps the lonely vigil overhead.' },
+      { jd: 2440424.705, t: 'Homeward', d: 'Eagle rejoins Columbia and is cast off; the SPS engine burns trans-Earth injection. Falling home takes two and a half days.' },
+      { jd: 2440427.2, t: 'Splashdown', d: 'Jul 24, 16:50 UTC — Columbia hits the Pacific. Quarantine trailer, ticker tape, and a plaque left behind: "We came in peace for all mankind."' },
+    ],
+  },
 };
 const Missions = {
   active: null, line: null, marker: null, _evIdx: -1,
@@ -3516,6 +3529,49 @@ const Missions = {
     return g;
   },
 
+  // Apollo CSM: silver service module, polished command-module cone, engine bell.
+  _buildApollo() {
+    const g = new THREE.Group();
+    const silver = new THREE.MeshStandardMaterial({ color: 0xd9dee8, roughness: 0.35, metalness: 0.6 });
+    const shiny = new THREE.MeshStandardMaterial({ color: 0xc4ccd8, roughness: 0.25, metalness: 0.8 });
+    const sm = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.09, 14), silver);
+    sm.rotation.x = Math.PI / 2;
+    g.add(sm);
+    const cm = new THREE.Mesh(new THREE.ConeGeometry(0.035, 0.05, 14), shiny);
+    cm.rotation.x = -Math.PI / 2;
+    cm.position.z = -0.07;
+    g.add(cm);
+    const noz = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.034, 12, 1, true), shiny);
+    noz.rotation.x = Math.PI / 2;
+    noz.position.z = 0.062;
+    g.add(noz);
+    return g;
+  },
+
+  // Earth-local Apollo position by mission phase — schematic geometry pinned to
+  // the real July 1969 clock; the translunar leg chases the Moon's live position.
+  _apolloPos(jd) {
+    const L = 2440419.064, TLI = 2440419.18, LOI = 2440422.22,
+          LAND = 2440423.345, LIFT = 2440424.246, TEI = 2440424.705, SPL = 2440427.2;
+    if (jd < L || jd > SPL) return new THREE.Vector3(0.42, 0.02, -0.38);   // on the pad / bobbing in the Pacific
+    const moonMesh = Orrery.meshes.earth.children.find(c => c.userData.isMoon);
+    const mv = moonMesh.position;
+    const park = a => new THREE.Vector3(Math.cos(a) * 0.66, 0.02, Math.sin(a) * 0.66);
+    if (jd < TLI) return park((jd - L) / 0.12 * 4 * Math.PI);
+    if (jd < LOI) {                                          // translunar coast
+      const f = (jd - TLI) / (LOI - TLI), e = f * f * (3 - 2 * f);
+      const out = park((TLI - L) / 0.12 * 4 * Math.PI).lerp(mv.clone().multiplyScalar(0.81), e);
+      return out.add(new THREE.Vector3(-mv.z, 0, mv.x).normalize().multiplyScalar(Math.sin(Math.PI * f) * 0.14));
+    }
+    if (jd >= LAND && jd < LIFT) return mv.clone().multiplyScalar(0.87);   // Tranquility Base, near side
+    if (jd < TEI) {                                          // lunar orbit, ~2 h laps
+      const a = (jd - LOI) / 0.085 * 2 * Math.PI;
+      return mv.clone().add(new THREE.Vector3(Math.cos(a) * 0.2, 0.025, Math.sin(a) * 0.2));
+    }
+    const f = (jd - TEI) / (SPL - TEI), e = f * f * (3 - 2 * f);   // trans-Earth coast
+    return mv.clone().multiplyScalar(0.84).lerp(new THREE.Vector3(0.42, 0.02, -0.38), e);
+  },
+
   jdToPos(jd) {                                              // piecewise-linear through the baked segments
     const segs = MISSIONS[this.active].eph.segs;
     let sg = segs[0];
@@ -3528,7 +3584,7 @@ const Missions = {
     this.active = key;
     const m = MISSIONS[key];
     if (this.line) { Orrery.scene.remove(this.line); this.line.geometry.dispose(); this.line = null; }
-    {
+    if (m.eph) {
       const pts = [];
       for (const sg of m.eph.segs)
         for (let i = 0; i < sg.n; i += 2) pts.push(eclToScene({ x: sg.xyz[i*3], y: sg.xyz[i*3+1], z: sg.xyz[i*3+2] }));
@@ -3536,8 +3592,14 @@ const Missions = {
         new THREE.LineBasicMaterial({ color: 0x5eead4, transparent: true, opacity: 0.6 }));
       Orrery.scene.add(this.line);
     }
+    const kind = m.craft || 'probe';
+    if (this.marker && this._craftKind !== kind) {
+      Orrery.scene.remove(this.marker);
+      this.marker = null;
+    }
     if (!this.marker) {
-      this.marker = this._buildCraft();
+      this._craftKind = kind;
+      this.marker = kind === 'apollo' ? this._buildApollo() : this._buildCraft();
       const lbl = makeLabel('Voyager 2', 'planet');
       lbl.element.style.color = '#ffd27d';
       lbl.element.style.textShadow = '0 0 8px rgba(255,210,125,0.6), 0 1px 3px rgba(0,0,0,0.9)';
@@ -3546,7 +3608,8 @@ const Missions = {
       Orrery.scene.add(this.marker);
       Orrery.meshes.vgr2 = this.marker;                      // lets setFocus/_focusPos ride along
     }
-    this.line.visible = this.marker.visible = true;
+    if (this.line) this.line.visible = true;
+    this.marker.visible = true;
     this._evIdx = -1;
     Sim.ms = (m.events[0].jd - 2440587.5) * 86400000;
     this.marker.userData.label.element.textContent = m.name;
@@ -3555,6 +3618,9 @@ const Missions = {
     refreshSpeedUI();
     document.querySelector('#tabs button[data-view="orrery"]').click();
     Orrery.setFocus('vgr2');
+    const tp = m.custom ? Orrery.meshes.earth.position.clone() : eclToScene(this.jdToPos(Sim.jd));
+    Orrery.controls.target.copy(tp);
+    Orrery.camera.position.copy(tp).add(new THREE.Vector3(4, 2, 4));
   },
   stop() {
     if (!this.active) return;
@@ -3566,9 +3632,18 @@ const Missions = {
   },
   update() {
     if (!this.active || !this.marker) return;
-    const p = this.jdToPos(Sim.jd);
-    this.marker.position.copy(eclToScene(p));
-    this.marker.lookAt(ORIGIN);                              // dish home toward Sun/Earth
+    if (MISSIONS[this.active].custom === 'apollo11') {
+      const off = this._apolloPos(Sim.jd);
+      if (off) {
+        this.marker.visible = true;
+        this.marker.position.copy(Orrery.meshes.earth.position).add(off);
+        this.marker.lookAt(Orrery.meshes.earth.position);
+      } else this.marker.visible = false;
+    } else {
+      const p = this.jdToPos(Sim.jd);
+      this.marker.position.copy(eclToScene(p));
+      this.marker.lookAt(ORIGIN);                            // dish home toward Sun/Earth
+    }
     this.marker.userData.label.visible = true;
     const evs = MISSIONS[this.active].events;
     let idx = -1;
@@ -3585,6 +3660,7 @@ const Missions = {
         card.classList.add('open');
         card.querySelector('.close').onclick = () => card.classList.remove('open');
         card.querySelector('#mission-exit').onclick = () => this.stop();
+        if (idx === evs.length - 1) { Sim.paused = true; refreshSpeedUI(); }   // story over — hold the moment
       }
     }
   },
@@ -3601,12 +3677,7 @@ function buildMissions() {
     card.querySelector('button').onclick = () => Missions.start(key);
     grid.appendChild(card);
   }
-  const soon = document.createElement('div');
-  soon.className = 'feed-card';
-  soon.innerHTML = `<div style="padding:18px 20px;color:var(--text-dim)">
-    <div style="font-size:13px;letter-spacing:1px">🌙 Apollo 11</div>
-    <p style="font-size:12px;margin-top:8px">More replays coming soon.</p></div>`;
-  grid.appendChild(soon);
+
 }
 buildMissions();
 
