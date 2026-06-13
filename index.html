@@ -848,6 +848,7 @@
           <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker — planets or the Sun — to magnify it against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
+          <div class="help-row"><span class="icon">🧊</span><span><strong>Kuiper Belt</strong> — the icy debris ring beyond Neptune (~30–50 AU), home of Pluto and the comets. Most bodies cluster in the classical belt at low tilt, with a scattered tail reaching higher inclinations. Drifts slowly prograde at high time speeds and morphs honestly under true scale.</span></div>
           <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
         </div>
@@ -1526,7 +1527,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false,
   trueTarget: 0, _helioR: {}, _orbitRaw: {}, starlinkStyle: 'dots',
 
   init() {
@@ -1776,6 +1777,7 @@ const Orrery = {
           if (v) this._gravT = null;                           // force a sheet rebuild now
         } },
       { label: 'Milky Way', get: () => this.showMW, set: v => { this.showMW = v; this.mwGroup.visible = v; } },
+      { label: 'Kuiper Belt', get: () => this.showKuiper, set: v => { this.showKuiper = v; if (this.kuiperPoints) this.kuiperPoints.visible = v; } },
       { label: 'True scale', get: () => !!this.trueTarget, set: v => { this.trueTarget = v ? 1 : 0; } },
     ]);
     const pingBtn = document.createElement('button');
@@ -1834,6 +1836,7 @@ const Orrery = {
     this.addMagFields();
     this.addGravityGrid();
     this.addMilkyWay();
+    this.addKuiperBelt();
     this.addSatLayer();
     this.addStarlinkLayer();
     this.addSatGroupLayers();
@@ -2498,6 +2501,14 @@ const Orrery = {
       }
       attr.needsUpdate = true;
     }
+    if (this.kuiperPoints) {
+      const attr = this.kuiperPoints.geometry.attributes.position;
+      for (let k = 0; k < this._kuiperRaw.length; k++) {
+        const v = eclToScene(this._kuiperRaw[k]);
+        attr.setXYZ(k, v.x, v.y, v.z);
+      }
+      attr.needsUpdate = true;
+    }
   },
 
   _applyScaleMorph() {
@@ -2709,6 +2720,38 @@ const Orrery = {
     group.visible = this.showMW;
     this.mwGroup = group;
     this.scene.add(group);
+  },
+
+  // Kuiper Belt: the icy debris ring beyond Neptune (~30–50 AU). Most bodies
+  // sit in the "classical" belt 39–48 AU at low inclination, with a scattered
+  // tail reaching higher tilts. Positions are baked once in ecliptic space and
+  // re-projected through eclToScene, so the ring morphs with true scale. A very
+  // slow prograde drift (mean motion at ~42 AU) shows only at high sim speeds.
+  addKuiperBelt() {
+    const N = 5200, raw = [];
+    for (let i = 0; i < N; i++) {
+      const r = Math.random() < 0.8 ? 39 + Math.random() * 9     // classical belt
+                                    : 30 + Math.random() * 20;    // plutinos + scattered disk
+      const theta = Math.random() * Math.PI * 2;
+      const inc = Math.pow(Math.random(), 2.4) * 0.52;            // rad: peak near 0, tail ~30°
+      const z = r * Math.sin(inc) * (Math.random() < 0.5 ? -1 : 1);
+      const rr = r * Math.cos(inc);
+      raw.push({ x: rr * Math.cos(theta), y: rr * Math.sin(theta), z });
+    }
+    this._kuiperRaw = raw;
+    const geo = new THREE.BufferGeometry(), pos = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) {
+      const v = eclToScene(raw[i]);
+      pos.set([v.x, v.y, v.z], i * 3);
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    this.kuiperPoints = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 1.4, map: starSprite, color: 0x8fc0dd, transparent: true, opacity: 0.55,
+      sizeAttenuation: false, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    this.kuiperPoints.frustumCulled = false;
+    this.kuiperPoints.visible = this.showKuiper;
+    this.scene.add(this.kuiperPoints);
   },
 
   // LineSegments per planet, parented to the planet so they ride its orbit.
@@ -2937,6 +2980,7 @@ const Orrery = {
       else (this.spinMeshes[name] || this.meshes[name]).rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
     }
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
+    if (this.kuiperPoints) this.kuiperPoints.rotation.y = -rev(d * 360 / 99400) * DEG;  // belt drift, ~272-yr orbit @42 AU
     this.updateISS(d);
     this.updateSats(d);
     this.updateStarlink(d);
