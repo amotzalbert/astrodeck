@@ -1243,6 +1243,26 @@ function issState(date) {
   return pv;
 }
 
+// Cached Celestrak GROUP fetch. Celestrak rate-limits (HTTP 403) re-downloads
+// of unchanged data, so we cache the last good copy in localStorage and reuse
+// it — both polite and resilient (a 403 falls back to the cached TLEs).
+async function fetchTLEGroup(group, maxAgeHrs) {
+  const ck = 'astrodeck.tle.' + group;
+  let cached = null;
+  try { cached = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {}
+  if (cached && Date.now() - cached.t < (maxAgeHrs || 12) * 3600000) return cached.txt;
+  try {
+    const r = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=TLE');
+    const txt = await r.text();
+    if (r.ok && /(^|\n)1 \d/.test(txt)) {                    // a real TLE block, not an error page
+      try { localStorage.setItem(ck, JSON.stringify({ t: Date.now(), txt })); } catch (e) {}
+      return txt;
+    }
+    console.warn('Celestrak ' + group + ' → ' + r.status + ': ' + txt.slice(0, 70).replace(/\s+/g, ' '));
+  } catch (e) { console.warn('Celestrak ' + group + ' fetch failed', e); }
+  return cached ? cached.txt : null;                         // stale cache beats nothing
+}
+
 // Known-satellites layer: Celestrak's "visual" group — the ~160 brightest,
 // most recognisable objects in orbit (Hubble, Tiangong, big rocket bodies…).
 // Fetched lazily the first time the Satellites toggle is switched on.
@@ -1251,8 +1271,8 @@ async function loadSatCatalog() {
   if (satCatalog || satLoading || typeof satellite === 'undefined') return;
   satLoading = true;
   try {
-    const txt = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=TLE')).text();
-    const lines = txt.trim().split(/\r?\n/);
+    const txt = await fetchTLEGroup('visual', 12);
+    const lines = (txt || '').trim().split(/\r?\n/);
     const out = [];
     for (let i = 0; i + 2 < lines.length; i += 3) {
       const name = lines[i].trim(), l1 = lines[i + 1], l2 = lines[i + 2];
@@ -1272,8 +1292,8 @@ async function loadStarlinkCatalog() {
   if (starlinkCatalog || starlinkLoading || typeof satellite === 'undefined') return;
   starlinkLoading = true;
   try {
-    const txt = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=TLE')).text();
-    const lines = txt.trim().split(/\r?\n/);
+    const txt = await fetchTLEGroup('starlink', 12);
+    const lines = (txt || '').trim().split(/\r?\n/);
     const out = [];
     for (let i = 0; i + 2 < lines.length; i += 3) {
       const l1 = lines[i + 1], l2 = lines[i + 2];
@@ -1894,8 +1914,8 @@ const Orrery = {
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8000 * 3), 3));
     geo.setDrawRange(0, 0);
     this.starlinkPoints = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 0.03, map: starSprite, color: 0x8fe6d2, transparent: true, opacity: 0.8,
-      depthWrite: false, sizeAttenuation: true,
+      size: 1.7, map: starSprite, color: 0x8fe6d2, transparent: true, opacity: 0.7,
+      depthWrite: false, sizeAttenuation: false,                // constant screen size → shell reads at any zoom
     }));
     this.starlinkPoints.frustumCulled = false;
     this.starlinkPoints.visible = this.showStarlink;
