@@ -2728,7 +2728,7 @@ const Orrery = {
   // re-projected through eclToScene, so the ring morphs with true scale. A very
   // slow prograde drift (mean motion at ~42 AU) shows only at high sim speeds.
   addKuiperBelt() {
-    const N = 5200, raw = [];
+    const N = 9000, raw = [];
     for (let i = 0; i < N; i++) {
       const r = Math.random() < 0.8 ? 39 + Math.random() * 9     // classical belt
                                     : 30 + Math.random() * 20;    // plutinos + scattered disk
@@ -2746,7 +2746,7 @@ const Orrery = {
     }
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     this.kuiperPoints = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 2.4, map: starSprite, color: 0xbfe4f7, transparent: true, opacity: 0.9,
+      size: 3.6, map: starSprite, color: 0xe6f6ff, transparent: true, opacity: 1.0,
       sizeAttenuation: false, depthWrite: false, blending: THREE.AdditiveBlending,
     }));
     this.kuiperPoints.frustumCulled = false;
