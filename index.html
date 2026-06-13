@@ -835,7 +835,7 @@
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
-          <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker to magnify that planet against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
+          <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker — planets or the Sun — to magnify it against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
           <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
@@ -1601,9 +1601,8 @@ const Orrery = {
       if (IS_TOUCH) {                                         // touch: tap a marker to open, tap again to close
         if (this.lensOpen) { this.closeLens(); return; }
         if (SCALE_MORPH > 0.6 && this.lensTargets) {
-          this.raycaster.setFromCamera(ndc, this.camera);
-          const lh = this.raycaster.intersectObjects(this.lensTargets, false);
-          if (lh.length) { this.openLens(lh[0].object.userData.lensPlanet, e.clientX - rect.left, e.clientY - rect.top); return; }
+          const pick = this._lensPick(e, rect);
+          if (pick) { this.openLens(pick.planet, pick.sx, pick.sy); return; }
         }
       }
       this.raycaster.setFromCamera(ndc, this.camera);
@@ -1626,16 +1625,9 @@ const Orrery = {
         if (e.buttons !== 0) return;                          // ignore while dragging the view
         if (SCALE_MORPH <= 0.6 || !this.lensTargets) { if (this.lensOpen) this.closeLens(); return; }
         const rect = this.renderer.domElement.getBoundingClientRect();
-        _lensNdc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
-        this.raycaster.setFromCamera(_lensNdc, this.camera);
-        const lh = this.raycaster.intersectObjects(this.lensTargets, false);
-        if (lh.length) {
-          const planet = lh[0].object.userData.lensPlanet;
-          lh[0].object.getWorldPosition(_tmpV).project(this.camera);
-          this.openLens(planet, (_tmpV.x + 1) / 2 * rect.width, (1 - _tmpV.y) / 2 * rect.height);
-        } else if (this.lensOpen) {
-          this.closeLens();
-        }
+        const pick = this._lensPick(e, rect);
+        if (pick) this.openLens(pick.planet, pick.sx, pick.sy);
+        else if (this.lensOpen) this.closeLens();
       });
     }
 
@@ -1875,7 +1867,7 @@ const Orrery = {
     this.lensTargets = [];
     const lmat = new THREE.LineBasicMaterial({ color: 0x9fd2ff, transparent: true, opacity: 0.5 });
     const dmat = new THREE.MeshBasicMaterial({ color: 0x9fd2ff, transparent: true, opacity: 0.85 });
-    for (const name of PLANET_NAMES) {
+    for (const name of ['sun', ...PLANET_NAMES]) {
       const grp = new THREE.Group();
       grp.add(new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0.06, 0), new THREE.Vector3(0, 3, 0)]), lmat));
@@ -1902,7 +1894,7 @@ const Orrery = {
       for (const mk of this.scaleMarkers) {
         mk.group.visible = on;
         if (on) {
-          mk.group.position.copy(this.meshes[mk.planet].position);
+          mk.group.position.copy(mk.planet === 'sun' ? this.sunMesh.position : this.meshes[mk.planet].position);
           const d2 = this.camera.position.distanceTo(mk.group.position);
           mk.group.scale.setScalar(d2 * 0.013);
         }
@@ -1912,6 +1904,23 @@ const Orrery = {
   },
 
   // ---- Magnifier lens (C): the clicked planet under glass, a body for scale ----
+  // Pick the lens marker whose screen position is nearest the pointer (not the
+  // frontmost), so the Sun and the clustered inner planets are all selectable.
+  _lensPick(e, rect) {
+    _lensNdc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+    this.raycaster.setFromCamera(_lensNdc, this.camera);
+    const lh = this.raycaster.intersectObjects(this.lensTargets, false);
+    if (!lh.length) return null;
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    let best = null, bestD = Infinity, bx, by;
+    for (const hh of lh) {
+      hh.object.getWorldPosition(_tmpV).project(this.camera);
+      const hx = (_tmpV.x + 1) / 2 * rect.width, hy = (1 - _tmpV.y) / 2 * rect.height;
+      const d = (hx - px) ** 2 + (hy - py) ** 2;
+      if (d < bestD) { bestD = d; best = hh.object; bx = hx; by = hy; }
+    }
+    return { planet: best.userData.lensPlanet, sx: bx, sy: by };
+  },
   openLens(planet, sx, sy) {
     if (this.lensHover !== planet) { this._drawLens(planet); this.lensHover = planet; }
     if (sx != null) {                                        // float beside the marker, clamped to the view
@@ -1932,6 +1941,13 @@ const Orrery = {
     document.getElementById('scale-lens').classList.remove('open');
   },
   _lensSphere(ctx, x, y, r, col, name) {
+    if (name === 'sun') {                                     // self-luminous: glowing disc, no terminator
+      const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
+      g.addColorStop(0, '#fff7d6'); g.addColorStop(0.6, '#ffd27d'); g.addColorStop(1, '#e8923a');
+      ctx.save(); ctx.shadowColor = 'rgba(255,200,110,.9)'; ctx.shadowBlur = 20;
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); ctx.restore();
+      return;
+    }
     const ringed = name === 'saturn';
     if (ringed) {                                            // far ring arc behind the body
       ctx.strokeStyle = 'rgba(210,194,150,.5)'; ctx.lineWidth = Math.max(1.5, r * 0.16);
@@ -1964,8 +1980,9 @@ const Orrery = {
     ctx.setTransform(2, 0, 0, 2, 0, 0);
     ctx.clearRect(0, 0, 300, 300);
     const S = 150, R = 142;
-    const DIA = { mercury: 4879, venus: 12104, earth: 12756, mars: 6779, jupiter: 139820, saturn: 116460, uranus: 50724, neptune: 49244, moon: 3474 };
+    const DIA = { sun: 1392700, mercury: 4879, venus: 12104, earth: 12756, mars: 6779, jupiter: 139820, saturn: 116460, uranus: 50724, neptune: 49244, moon: 3474 };
     const COL = {
+      sun: ['#fff7d6', '#e8923a'],
       mercury: ['#cfc8bc', '#5c5850'], venus: ['#f6e2b4', '#8a6f42'], earth: ['#8cc0f0', '#1d3f7a'],
       mars: ['#e89668', '#7a3c22'], jupiter: ['#eed7a8', '#8a5f33'], saturn: ['#eedfb2', '#9a8050'],
       uranus: ['#bfe9ef', '#4a8a96'], neptune: ['#7a9bf0', '#23377e'], moon: ['#d8d8dc', '#5c5c64'],
@@ -1977,7 +1994,7 @@ const Orrery = {
     ctx.fillStyle = bg; ctx.fillRect(0, 0, 300, 300);
     const scaleBody = planet === 'earth' ? 'moon' : 'earth';
     const pDia = DIA[planet], sDia = DIA[scaleBody], maxD = Math.max(pDia, sDia);
-    const pr = pDia / maxD * 46, sr = sDia / maxD * 46;
+    const pr = Math.max(pDia / maxD * 46, 1.8), sr = Math.max(sDia / maxD * 46, 1.8);
     this._lensSphere(ctx, 120, 120, pr, COL[planet], planet);
     this._lensSphere(ctx, 200, 196, sr, COL[scaleBody], scaleBody);
     ctx.restore();
