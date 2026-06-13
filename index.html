@@ -1337,7 +1337,7 @@ function satShell(rkm) {
 // Categorised satellite layers — each its own Celestrak group(s), orbital
 // regime, colour and toggle. Lazy-loaded on first enable.
 const SAT_GROUPS = {
-  nav:    { label: 'Navigation', color: 0xffcf4d, size: 2.6, groups: ['gnss'] },
+  nav:    { label: 'Navigation', color: 0xffffff, size: 3.2, groups: ['gnss'] },
   geo:    { label: 'Geostationary', color: 0xff6ec7, size: 2.6, groups: ['geo'] },
   comms:  { label: 'Comms (LEO)', color: 0x5ad0ff, size: 1.9, groups: ['oneweb', 'iridium-NEXT', 'globalstar'] },
   wxsci:  { label: 'Weather & science', color: 0x8fe06a, size: 2.3, groups: ['weather', 'goes', 'science'] },
@@ -1750,12 +1750,6 @@ const Orrery = {
           this.showISS = v;
           if (!v && this.focusBody === 'iss') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
         } },
-      { label: 'Satellites', get: () => this.showSats, set: v => {
-          this.showSats = v;
-          if (v) { loadSatCatalog(); this._satT = null; }      // lazy TLE fetch on first enable
-          this.satPoints.visible = v;
-          if (satCatalog) for (const s of satCatalog) if (s.labelObj) s.labelObj.visible = v && this._satLabelsOn;
-        } },
       { label: 'Space telescopes', get: () => this.showScopes, set: v => {
           this.showScopes = v;
           if (v) loadScopes();                                 // lazy TLE fetch on first enable
@@ -1816,8 +1810,8 @@ const Orrery = {
         if (this.showStarlink) { loadStarlinkCatalog(); this._starReady = false; if (this.starlinkStyle === 'rings') this._buildStarlinkRings(); }
         this._applyStarlinkVis();
       });
-      const sats = [...document.querySelectorAll('#orrery-toggles .toggle-pill')].find(b => b.textContent.trim() === 'Satellites');
-      sats ? sats.after(sl) : document.getElementById('orrery-toggles').appendChild(sl);
+      const scopesPill = [...document.querySelectorAll('#orrery-toggles .toggle-pill')].find(b => b.textContent.trim().startsWith('Space'));
+      scopesPill ? scopesPill.after(sl) : document.getElementById('orrery-toggles').appendChild(sl);
       this._refreshSLModes();
 
       // Categorised satellite layers (Navigation, GEO, Comms, Weather/sci, Debris)
