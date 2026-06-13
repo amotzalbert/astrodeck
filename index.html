@@ -1459,6 +1459,7 @@ const ORIGIN = new THREE.Vector3();
 const _tmpV = new THREE.Vector3();
 const _tmpV2 = new THREE.Vector3();
 const _lensNdc = new THREE.Vector2();
+const _starColor = new THREE.Color();
 // Device-orientation → camera (classic three.js DeviceOrientationControls math)
 const GYRO_ZEE = new THREE.Vector3(0, 0, 1);
 const GYRO_Q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90° about X: device back → view
@@ -1914,10 +1915,11 @@ const Orrery = {
   addStarlinkLayer() {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(11000 * 3), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(11000 * 3), 3));
     geo.setDrawRange(0, 0);
     this.starlinkPoints = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 1.7, map: starSprite, color: 0xffb24d, transparent: true, opacity: 0.9,
-      depthWrite: false, sizeAttenuation: false,                // amber pops against the cool scene → gaps read clearly
+      size: 1.7, map: starSprite, vertexColors: true, transparent: true, opacity: 0.9,
+      depthWrite: false, sizeAttenuation: false,                // per-plane hue → cluster motion/direction reads at a glance
     }));
     this.starlinkPoints.frustumCulled = false;
     this.starlinkPoints.visible = this.showStarlink;
@@ -1940,11 +1942,16 @@ const Orrery = {
     if (Math.abs(Sim.ms - Date.now()) >= 45 * 86400000) { pts.geometry.setDrawRange(0, 0); return; }
     const attr = pts.geometry.attributes.position;
     const eps = obliquity(d), size = PLANET_META.earth.size, date = Sim.date, N = starlinkCatalog.length;
-    if (!this._starReady) {                                   // one-time full populate on enable
-      for (let i = 0; i < N; i++) this._placeStar(i, attr, eps, size, date);
+    if (!this._starReady) {                                   // one-time full populate + per-plane colors
+      const col = pts.geometry.attributes.color, c = _starColor;
+      for (let i = 0; i < N; i++) {
+        this._placeStar(i, attr, eps, size, date);
+        c.setHSL(((starlinkCatalog[i].nodeo / (2 * Math.PI)) % 1 + 1) % 1, 0.7, 0.6);   // hue = orbital plane (RAAN)
+        col.setXYZ(i, c.r, c.g, c.b);
+      }
       this._starReady = true; this._starIdx = 0;
       pts.geometry.setDrawRange(0, N);
-      attr.needsUpdate = true;
+      attr.needsUpdate = true; col.needsUpdate = true;
       return;
     }
     let i = this._starIdx || 0;                               // refresh ~600/frame, cycling
