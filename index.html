@@ -246,6 +246,14 @@
   }
   .toggle-pill.on { color: var(--text); border-color: rgba(94,234,212,0.3); }
   .toggle-pill.on .led { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .sl-modes { display: inline-flex; gap: 3px; margin-left: auto; }
+  .sl-modes button {
+    appearance: none; cursor: pointer; padding: 0;
+    width: 17px; height: 17px; border-radius: 5px;
+    border: 1px solid var(--border-soft); background: rgba(255,255,255,0.04);
+    color: var(--text-dim); font-family: var(--mono); font-size: 9.5px; line-height: 1;
+  }
+  .sl-modes button.active { background: rgba(94,234,212,0.18); color: var(--accent); border-color: rgba(94,234,212,0.5); }
 
   .dimmer-pill {
     display: flex; align-items: center; gap: 8px;
@@ -834,7 +842,7 @@
           <div class="help-row"><span class="icon">🛸</span><span>The <strong>ISS</strong> is a live 3D model: SGP4-propagated from today's TLE. Its solar arrays track the Sun in real time. Click it for ground track and pass info.</span></div>
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
-          <div class="help-row"><span class="icon">📡</span><span><strong>Starlink</strong> — the full SpaceX mega-constellation (thousands of satellites) as a live dense shell hugging Earth, propagated from current TLEs.</span></div>
+          <div class="help-row"><span class="icon">📡</span><span><strong>Starlink</strong> — the full SpaceX mega-constellation (~10,500 satellites) as a live shell hugging Earth, from current TLEs. The 1/2/3 buttons on the pill switch view: sharp dots (per-plane colours), orbital rings (each plane's orbit drawn), or inclination shells (a few bold colours).</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
           <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker — planets or the Sun — to magnify it against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
@@ -1102,6 +1110,15 @@ function glowTexture(inner = 'rgba(255,255,255,1)', outer = 'rgba(255,255,255,0)
   return new THREE.CanvasTexture(c);
 }
 const starSprite = glowTexture();
+// Hard-edged round dot (no bloom) — crisp Starlink pixels so the lattice reads
+const hardDotTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d');
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(16, 16, 13, 0, 7); g.fill();
+  return new THREE.CanvasTexture(c);
+})();
 
 /* ---------- Planet texture maps (CDN; colored spheres remain as fallback) ---------- */
 const TEX_THREE = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r160/examples/textures/planets/';
@@ -1303,7 +1320,7 @@ async function loadStarlinkCatalog() {
       out.push(satellite.twoline2satrec(l1.trim(), l2.trim()));
       if (out.length >= 11000) break;                         // hard cap for memory/perf
     }
-    if (out.length) { starlinkCatalog = out; Orrery._starReady = false; }
+    if (out.length) { starlinkCatalog = out; Orrery.onStarlinkLoaded(); }
   } catch (err) { console.warn('Starlink catalog unavailable', err); }
   starlinkLoading = false;
 }
@@ -1471,7 +1488,7 @@ const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
   showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false,
-  trueTarget: 0, _helioR: {}, _orbitRaw: {},
+  trueTarget: 0, _helioR: {}, _orbitRaw: {}, starlinkStyle: 'dots',
 
   init() {
     const host = document.getElementById('orrery-canvas');
@@ -1700,11 +1717,6 @@ const Orrery = {
           this.satPoints.visible = v;
           if (satCatalog) for (const s of satCatalog) if (s.labelObj) s.labelObj.visible = v && this._satLabelsOn;
         } },
-      { label: 'Starlink', get: () => this.showStarlink, set: v => {
-          this.showStarlink = v;
-          if (v) { loadStarlinkCatalog(); this._starReady = false; }   // lazy fetch + fresh populate
-          this.starlinkPoints.visible = v;
-        } },
       { label: 'Space telescopes', get: () => this.showScopes, set: v => {
           this.showScopes = v;
           if (v) loadScopes();                                 // lazy TLE fetch on first enable
@@ -1741,6 +1753,34 @@ const Orrery = {
     pingBtn.title = 'Send a pulse of light from the Sun at real light-speed (sim time)';
     pingBtn.onclick = () => this.startPing();
     document.getElementById('orrery-toggles').appendChild(pingBtn);
+
+    // Starlink — custom pill: click toggles on/off; the 1/2/3 segments pick the
+    // render style (sharp dots · orbital rings · inclination shells).
+    {
+      const sl = document.createElement('div');
+      sl.className = 'toggle-pill';
+      sl.id = 'starlink-pill';
+      sl.innerHTML = `<span class="led"></span>Starlink<span class="sl-modes">`
+        + `<button data-m="dots" title="Sharp dots">1</button>`
+        + `<button data-m="rings" title="Orbital rings">2</button>`
+        + `<button data-m="shells" title="Inclination shells">3</button></span>`;
+      const enable = () => {
+        if (this.showStarlink) return;
+        this.showStarlink = true; sl.classList.add('on');
+        loadStarlinkCatalog(); this._starReady = false;
+      };
+      sl.addEventListener('click', e => {
+        const mb = e.target.closest('.sl-modes button');
+        if (mb) { enable(); this.setStarlinkStyle(mb.dataset.m); return; }
+        this.showStarlink = !this.showStarlink;
+        sl.classList.toggle('on', this.showStarlink);
+        if (this.showStarlink) { loadStarlinkCatalog(); this._starReady = false; if (this.starlinkStyle === 'rings') this._buildStarlinkRings(); }
+        this._applyStarlinkVis();
+      });
+      const sats = [...document.querySelectorAll('#orrery-toggles .toggle-pill')].find(b => b.textContent.trim() === 'Satellites');
+      sats ? sats.after(sl) : document.getElementById('orrery-toggles').appendChild(sl);
+      this._refreshSLModes();
+    }
     this.addMagFields();
     this.addGravityGrid();
     this.addMilkyWay();
@@ -1918,8 +1958,8 @@ const Orrery = {
     geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(11000 * 3), 3));
     geo.setDrawRange(0, 0);
     this.starlinkPoints = new THREE.Points(geo, new THREE.PointsMaterial({
-      size: 1.7, map: starSprite, vertexColors: true, transparent: true, opacity: 0.9,
-      depthWrite: false, sizeAttenuation: false,                // per-plane hue → cluster motion/direction reads at a glance
+      size: 2.0, map: hardDotTex, vertexColors: true, transparent: true, opacity: 0.95,
+      depthWrite: false, sizeAttenuation: false,                // crisp dots → the lattice & gaps read sharply
     }));
     this.starlinkPoints.frustumCulled = false;
     this.starlinkPoints.visible = this.showStarlink;
@@ -1938,26 +1978,112 @@ const Orrery = {
 
   updateStarlink(d) {
     const pts = this.starlinkPoints;
-    if (!pts || !this.showStarlink || !starlinkCatalog) return;
+    if (!pts || !this.showStarlink || !starlinkCatalog || this.starlinkStyle === 'rings') return;
     if (Math.abs(Sim.ms - Date.now()) >= 45 * 86400000) { pts.geometry.setDrawRange(0, 0); return; }
     const attr = pts.geometry.attributes.position;
     const eps = obliquity(d), size = PLANET_META.earth.size, date = Sim.date, N = starlinkCatalog.length;
-    if (!this._starReady) {                                   // one-time full populate + per-plane colors
-      const col = pts.geometry.attributes.color, c = _starColor;
-      for (let i = 0; i < N; i++) {
-        this._placeStar(i, attr, eps, size, date);
-        c.setHSL(((starlinkCatalog[i].nodeo / (2 * Math.PI)) % 1 + 1) % 1, 0.7, 0.6);   // hue = orbital plane (RAAN)
-        col.setXYZ(i, c.r, c.g, c.b);
-      }
+    if (!this._starReady) {                                   // one-time full populate, then colour by style
+      for (let i = 0; i < N; i++) this._placeStar(i, attr, eps, size, date);
       this._starReady = true; this._starIdx = 0;
       pts.geometry.setDrawRange(0, N);
-      attr.needsUpdate = true; col.needsUpdate = true;
+      attr.needsUpdate = true;
+      this._recolorStarlink(this.starlinkStyle);
       return;
     }
     let i = this._starIdx || 0;                               // refresh ~600/frame, cycling
     for (let c = 0; c < 600 && i < N; c++, i++) this._placeStar(i, attr, eps, size, date);
     this._starIdx = i >= N ? 0 : i;
     attr.needsUpdate = true;
+  },
+
+  // Recolour the point cloud per style: 'dots' = per-plane rainbow (RAAN hue),
+  // 'shells' = a few bold colours by inclination band.
+  _recolorStarlink(mode) {
+    const pts = this.starlinkPoints;
+    if (!pts || !starlinkCatalog) return;
+    const col = pts.geometry.attributes.color, c = _starColor;
+    const N = Math.min(starlinkCatalog.length, 11000);
+    for (let i = 0; i < N; i++) {
+      const sr = starlinkCatalog[i];
+      if (mode === 'shells') {
+        const inc = sr.inclo * 57.2958;
+        c.set(inc < 60 ? 0x5ad0ff : inc < 85 ? 0xff5ea8 : 0xffc24d);    // 53° / 70° / polar
+      } else {
+        c.setHSL(((sr.nodeo / (2 * Math.PI)) % 1 + 1) % 1, 0.7, 0.6);   // hue = orbital plane
+      }
+      col.setXYZ(i, c.r, c.g, c.b);
+    }
+    col.needsUpdate = true;
+  },
+
+  // Orbital-plane rings: group satellites into planes (inclination + RAAN) and
+  // draw each plane's great-circle orbit once. Static in Earth's frame.
+  _buildStarlinkRings() {
+    if (this.starlinkRings || !starlinkCatalog) return;
+    const planes = new Map();
+    for (const sr of starlinkCatalog) {
+      const key = Math.round(sr.inclo * 57.2958 / 0.5) + '|' + Math.round((((sr.nodeo * 57.2958) % 360) + 360) % 360 / 2);
+      if (!planes.has(key)) planes.set(key, sr);
+    }
+    const eps = obliquity(Sim.d), size = PLANET_META.earth.size;
+    const pos = [], col = [], c = _starColor, zc = new THREE.Vector3(0, 0, 1);
+    const u = new THREE.Vector3(), v = new THREE.Vector3(), n = new THREE.Vector3(), dir = new THREE.Vector3();
+    for (const sr of planes.values()) {
+      const i = sr.inclo, O = sr.nodeo;
+      n.set(Math.sin(i) * Math.sin(O), -Math.sin(i) * Math.cos(O), Math.cos(i)).normalize();
+      u.crossVectors(n, zc); if (u.lengthSq() < 1e-6) u.set(1, 0, 0); u.normalize();
+      v.crossVectors(n, u).normalize();
+      const pv = satellite.propagate(sr, Sim.date);
+      let f = 1.44;
+      if (pv && pv.position) { const rk = Math.hypot(pv.position.x, pv.position.y, pv.position.z); f = Math.min(3.4, 1 + 0.38 * Math.pow(Math.max(rk - 6371, 150) / 420, 0.55)); }
+      const R = size * f;
+      c.setHSL(((O / (2 * Math.PI)) % 1 + 1) % 1, 0.7, 0.6);
+      const SEG = 48, ring = [];
+      for (let k = 0; k <= SEG; k++) {
+        const t = k / SEG * 2 * Math.PI;
+        dir.copy(u).multiplyScalar(Math.cos(t)).addScaledVector(v, Math.sin(t));
+        this._eciToScene(dir, eps, _tmpV2).normalize().multiplyScalar(R);
+        ring.push(_tmpV2.x, _tmpV2.y, _tmpV2.z);
+      }
+      for (let k = 0; k < SEG; k++) {
+        const a = k * 3;
+        pos.push(ring[a], ring[a + 1], ring[a + 2], ring[a + 3], ring[a + 4], ring[a + 5]);
+        col.push(c.r, c.g, c.b, c.r, c.g, c.b);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    this.starlinkRings = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.5, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    this.starlinkRings.frustumCulled = false;
+    this.meshes.earth.add(this.starlinkRings);
+  },
+
+  _applyStarlinkVis() {
+    const live = this.showStarlink && SCALE_MORPH < 0.02;
+    if (this.starlinkPoints) this.starlinkPoints.visible = live && this.starlinkStyle !== 'rings';
+    if (this.starlinkRings) this.starlinkRings.visible = live && this.starlinkStyle === 'rings';
+  },
+
+  setStarlinkStyle(mode) {
+    this.starlinkStyle = mode;
+    if (mode === 'rings') this._buildStarlinkRings();
+    else if (this._starReady) this._recolorStarlink(mode);
+    this._applyStarlinkVis();
+    this._refreshSLModes();
+  },
+
+  onStarlinkLoaded() {                                        // catalog arrived
+    this._starReady = false;
+    if (this.starlinkStyle === 'rings') this._buildStarlinkRings();
+    this._applyStarlinkVis();
+  },
+
+  _refreshSLModes() {
+    const wrap = document.querySelector('#starlink-pill .sl-modes');
+    if (wrap) for (const b of wrap.children) b.classList.toggle('active', b.dataset.m === this.starlinkStyle);
   },
 
   // ---- True-scale extras: ghost markers (B) + magnifier lens (C) ----
@@ -2285,7 +2411,7 @@ const Orrery = {
     if (this.earthHalo) this.earthHalo.visible = vis;
     for (const g of this.magFields) g.visible = vis && this.showMag;
     if (this.satPoints) this.satPoints.visible = vis && this.showSats;
-    if (this.starlinkPoints) this.starlinkPoints.visible = vis && this.showStarlink;
+    this._applyStarlinkVis();
     this._rebuildOrbits();
   },
 
