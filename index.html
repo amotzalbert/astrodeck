@@ -834,6 +834,7 @@
           <div class="help-row"><span class="icon">🛸</span><span>The <strong>ISS</strong> is a live 3D model: SGP4-propagated from today's TLE. Its solar arrays track the Sun in real time. Click it for ground track and pass info.</span></div>
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
+          <div class="help-row"><span class="icon">📡</span><span><strong>Starlink</strong> — the full SpaceX mega-constellation (thousands of satellites) as a live dense shell hugging Earth, propagated from current TLEs.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
           <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker — planets or the Sun — to magnify it against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
@@ -1264,6 +1265,27 @@ async function loadSatCatalog() {
   satLoading = false;
 }
 
+// Starlink mega-constellation — Celestrak's full "starlink" group (thousands of
+// satrecs). Fetched lazily on first enable; rendered as a dense shell.
+let starlinkCatalog = null, starlinkLoading = false;
+async function loadStarlinkCatalog() {
+  if (starlinkCatalog || starlinkLoading || typeof satellite === 'undefined') return;
+  starlinkLoading = true;
+  try {
+    const txt = await (await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=starlink&FORMAT=TLE')).text();
+    const lines = txt.trim().split(/\r?\n/);
+    const out = [];
+    for (let i = 0; i + 2 < lines.length; i += 3) {
+      const l1 = lines[i + 1], l2 = lines[i + 2];
+      if (!l1 || !l2 || l1[0] !== '1') break;
+      out.push(satellite.twoline2satrec(l1.trim(), l2.trim()));
+      if (out.length >= 8000) break;                          // hard cap for memory/perf
+    }
+    if (out.length) { starlinkCatalog = out; Orrery._starReady = false; }
+  } catch (err) { console.warn('Starlink catalog unavailable', err); }
+  starlinkLoading = false;
+}
+
 // Space-telescopes layer: the great observatories, each with a 3D model and
 // its real orbit. Hubble in LEO; Chandra & XMM-Newton on wildly eccentric
 // multi-day orbits; JWST shown at Sun–Earth L2 (no TLE — placed analytically).
@@ -1425,7 +1447,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false,
   trueTarget: 0, _helioR: {}, _orbitRaw: {},
 
   init() {
@@ -1655,6 +1677,11 @@ const Orrery = {
           this.satPoints.visible = v;
           if (satCatalog) for (const s of satCatalog) if (s.labelObj) s.labelObj.visible = v && this._satLabelsOn;
         } },
+      { label: 'Starlink', get: () => this.showStarlink, set: v => {
+          this.showStarlink = v;
+          if (v) { loadStarlinkCatalog(); this._starReady = false; }   // lazy fetch + fresh populate
+          this.starlinkPoints.visible = v;
+        } },
       { label: 'Space telescopes', get: () => this.showScopes, set: v => {
           this.showScopes = v;
           if (v) loadScopes();                                 // lazy TLE fetch on first enable
@@ -1695,6 +1722,7 @@ const Orrery = {
     this.addGravityGrid();
     this.addMilkyWay();
     this.addSatLayer();
+    this.addStarlinkLayer();
     this.addHalley();
     this.addScaleMarkers();
 
@@ -1856,6 +1884,50 @@ const Orrery = {
       }
     }
     this.satPoints.geometry.setDrawRange(0, n);
+    attr.needsUpdate = true;
+  },
+
+  // Starlink shell: thousands of points parented to Earth. Propagation is spread
+  // across frames (a slice per frame) so even ~8k satrecs never hitch a frame.
+  addStarlinkLayer() {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8000 * 3), 3));
+    geo.setDrawRange(0, 0);
+    this.starlinkPoints = new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.03, map: starSprite, color: 0x8fe6d2, transparent: true, opacity: 0.8,
+      depthWrite: false, sizeAttenuation: true,
+    }));
+    this.starlinkPoints.frustumCulled = false;
+    this.starlinkPoints.visible = this.showStarlink;
+    this.meshes.earth.add(this.starlinkPoints);
+  },
+
+  _placeStar(i, attr, eps, size, date) {
+    const pv = satellite.propagate(starlinkCatalog[i], date);
+    const p = pv && pv.position;
+    if (!p || !isFinite(p.x)) { attr.setXYZ(i, 0, 0, 0); return; }
+    const rkm = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    const f = Math.min(3.4, 1 + 0.38 * Math.pow(Math.max(rkm - 6371, 150) / 420, 0.55));
+    this._eciToScene(p, eps, _tmpV).normalize().multiplyScalar(size * f);
+    attr.setXYZ(i, _tmpV.x, _tmpV.y, _tmpV.z);
+  },
+
+  updateStarlink(d) {
+    const pts = this.starlinkPoints;
+    if (!pts || !this.showStarlink || !starlinkCatalog) return;
+    if (Math.abs(Sim.ms - Date.now()) >= 45 * 86400000) { pts.geometry.setDrawRange(0, 0); return; }
+    const attr = pts.geometry.attributes.position;
+    const eps = obliquity(d), size = PLANET_META.earth.size, date = Sim.date, N = starlinkCatalog.length;
+    if (!this._starReady) {                                   // one-time full populate on enable
+      for (let i = 0; i < N; i++) this._placeStar(i, attr, eps, size, date);
+      this._starReady = true; this._starIdx = 0;
+      pts.geometry.setDrawRange(0, N);
+      attr.needsUpdate = true;
+      return;
+    }
+    let i = this._starIdx || 0;                               // refresh ~600/frame, cycling
+    for (let c = 0; c < 600 && i < N; c++, i++) this._placeStar(i, attr, eps, size, date);
+    this._starIdx = i >= N ? 0 : i;
     attr.needsUpdate = true;
   },
 
@@ -2184,6 +2256,7 @@ const Orrery = {
     if (this.earthHalo) this.earthHalo.visible = vis;
     for (const g of this.magFields) g.visible = vis && this.showMag;
     if (this.satPoints) this.satPoints.visible = vis && this.showSats;
+    if (this.starlinkPoints) this.starlinkPoints.visible = vis && this.showStarlink;
     this._rebuildOrbits();
   },
 
@@ -2606,6 +2679,7 @@ const Orrery = {
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
     this.updateISS(d);
     this.updateSats(d);
+    this.updateStarlink(d);
     this.updateScopes(d);
     this.updateHalley(d);
     this.updatePing();
