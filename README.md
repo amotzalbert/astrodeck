@@ -14,6 +14,7 @@ A single-file, real-time 3D night-sky app. No build, no install, no account — 
 - **12 major moons with real ephemeris** — Phobos, Deimos, Io, Europa, Ganymede, Callisto, Enceladus, Rhea, Titan, Titania, Oberon, Triton — Kepler-propagated from JPL Horizons osculating elements (true directions and phases; Triton correctly retrograde, Uranus' moons correctly sideways)
 - **ISS in real time** — low-poly 3D model with sun-tracking solar arrays, riding its true 51.6°-inclined orbit, SGP4-propagated from today's TLE (verified against live tracking to within seconds of motion)
 - **Space telescopes layer** — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: LEO circle, wild multi-day X-ray ellipses, and JWST flying its real halo orbit at Sun–Earth L2 (baked JPL Horizons ephemeris, 2026–2030)
+- **Satellite categories** — separate toggles for Navigation (GPS/GNSS, MEO), the Geostationary ring, Comms LEO constellations, Weather & science, and tracked Debris; altitudes scaled so LEO/MEO/GEO form distinct shells
 - **Starlink layer** — the full SpaceX mega-constellation (thousands of sats) as a live shell around Earth, SGP4-propagated from current TLEs
 - **Known-satellites layer** — the ~150 brightest catalogued objects (Hubble, Tiangong, rocket bodies) live around Earth from fresh Celestrak TLEs, toggleable
 - **Earth with your home marked** — red dot at your saved lat/lon on a globe oriented by true sidereal rotation + 23.4° axial tilt, so day/night vs the Sun is real

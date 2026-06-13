@@ -843,6 +843,7 @@
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
           <div class="help-row"><span class="icon">📡</span><span><strong>Starlink</strong> — the full SpaceX mega-constellation (~10,500 satellites) as a live shell hugging Earth, from current TLEs. The 1/2/3 buttons on the pill switch view: sharp dots (per-plane colours), orbital rings (each plane's orbit drawn), or inclination shells (a few bold colours).</span></div>
+          <div class="help-row"><span class="icon">🛰</span><span><strong>Satellite categories</strong> — separate toggles for <strong>Navigation</strong> (GPS/GNSS, MEO), the <strong>Geostationary</strong> ring, <strong>Comms</strong> LEO constellations, <strong>Weather &amp; science</strong>, and tracked <strong>Debris</strong>. Altitudes are scaled so LEO, MEO and GEO sit at distinct shells — Earth orbit as a cross-section.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
           <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker — planets or the Sun — to magnify it against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
@@ -1325,6 +1326,44 @@ async function loadStarlinkCatalog() {
   starlinkLoading = false;
 }
 
+// Display altitude → shell radius (× Earth display size). Exaggerates LEO so it
+// clears the surface, but preserves ordering up to GEO so the regimes separate:
+// LEO ≈ 1.5×, MEO/GPS ≈ 2.7×, GEO ≈ 3.2×.
+function satShell(rkm) {
+  const x = Math.min(Math.max(rkm - 6371, 120) / 35786, 1.25);   // fraction of GEO altitude
+  return 1.2 + 2.0 * Math.pow(x, 0.45);
+}
+
+// Categorised satellite layers — each its own Celestrak group(s), orbital
+// regime, colour and toggle. Lazy-loaded on first enable.
+const SAT_GROUPS = {
+  nav:    { label: 'Navigation', color: 0xffcf4d, size: 2.6, groups: ['gnss'] },
+  geo:    { label: 'Geostationary', color: 0xff6ec7, size: 2.6, groups: ['geo'] },
+  comms:  { label: 'Comms (LEO)', color: 0x5ad0ff, size: 1.9, groups: ['oneweb', 'iridium-NEXT', 'globalstar'] },
+  wxsci:  { label: 'Weather & science', color: 0x8fe06a, size: 2.3, groups: ['weather', 'goes', 'science'] },
+  debris: { label: 'Debris', color: 0xff6b5e, size: 1.4, groups: ['cosmos-2251-debris', 'fengyun-1c-debris', 'iridium-33-debris'] },
+};
+async function loadSatGroup(id) {
+  const L = Orrery.satLayers[id];
+  if (!L || L.catalog || L.loading || typeof satellite === 'undefined') return;
+  L.loading = true;
+  const out = [];
+  for (const g of L.def.groups) {
+    const txt = await fetchTLECached('https://celestrak.org/NORAD/elements/gp.php?GROUP=' + g + '&FORMAT=TLE', g, 12);
+    if (!txt) continue;
+    const lines = txt.trim().split(/\r?\n/);
+    for (let i = 0; i + 2 < lines.length; i += 3) {
+      const l1 = lines[i + 1], l2 = lines[i + 2];
+      if (!l1 || !l2 || l1[0] !== '1') break;
+      out.push(satellite.twoline2satrec(l1.trim(), l2.trim()));
+      if (out.length >= 6000) break;
+    }
+    if (out.length >= 6000) break;
+  }
+  if (out.length) { L.catalog = out; L.ready = false; Orrery._applySatGroupVis(); }
+  L.loading = false;
+}
+
 // Space-telescopes layer: the great observatories, each with a 3D model and
 // its real orbit. Hubble in LEO; Chandra & XMM-Newton on wildly eccentric
 // multi-day orbits; JWST shown at Sun–Earth L2 (no TLE — placed analytically).
@@ -1780,12 +1819,32 @@ const Orrery = {
       const sats = [...document.querySelectorAll('#orrery-toggles .toggle-pill')].find(b => b.textContent.trim() === 'Satellites');
       sats ? sats.after(sl) : document.getElementById('orrery-toggles').appendChild(sl);
       this._refreshSLModes();
+
+      // Categorised satellite layers (Navigation, GEO, Comms, Weather/sci, Debris)
+      let ref = sl;
+      for (const [id, def] of Object.entries(SAT_GROUPS)) {
+        const b = document.createElement('button');
+        b.className = 'toggle-pill';
+        b.innerHTML = `<span class="led"></span>${def.label}`;
+        const led = b.querySelector('.led'), hex = '#' + def.color.toString(16).padStart(6, '0');
+        b.onclick = () => {
+          const L = this.satLayers[id];
+          L.on = !L.on;
+          b.classList.toggle('on', L.on);
+          led.style.background = L.on ? hex : '';
+          led.style.boxShadow = L.on ? '0 0 8px ' + hex : '';
+          if (L.on) { loadSatGroup(id); L.ready = false; }
+          this._applySatGroupVis();
+        };
+        ref.after(b); ref = b;
+      }
     }
     this.addMagFields();
     this.addGravityGrid();
     this.addMilkyWay();
     this.addSatLayer();
     this.addStarlinkLayer();
+    this.addSatGroupLayers();
     this.addHalley();
     this.addScaleMarkers();
 
@@ -1940,8 +1999,7 @@ const Orrery = {
         const p = pv && pv.position;
         if (!p || !isFinite(p.x)) { if (s.labelObj) s.labelObj.visible = false; continue; }
         const rkm = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-        const f = Math.min(3.4, 1 + 0.38 * Math.pow(Math.max(rkm - 6371, 150) / 420, 0.55));
-        this._eciToScene(p, eps, _tmpV).normalize().multiplyScalar(size * f);
+        this._eciToScene(p, eps, _tmpV).normalize().multiplyScalar(size * satShell(rkm));
         if (n < 300) attr.setXYZ(n++, _tmpV.x, _tmpV.y, _tmpV.z);
         if (s.labelObj) s.labelObj.position.copy(_tmpV);
       }
@@ -1971,9 +2029,64 @@ const Orrery = {
     const p = pv && pv.position;
     if (!p || !isFinite(p.x)) { attr.setXYZ(i, 0, 0, 0); return; }
     const rkm = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
-    const f = Math.min(3.4, 1 + 0.38 * Math.pow(Math.max(rkm - 6371, 150) / 420, 0.55));
-    this._eciToScene(p, eps, _tmpV).normalize().multiplyScalar(size * f);
+    this._eciToScene(p, eps, _tmpV).normalize().multiplyScalar(size * satShell(rkm));
     attr.setXYZ(i, _tmpV.x, _tmpV.y, _tmpV.z);
+  },
+
+  // Place one satellite from any category catalog into its buffer slot.
+  _placeSat(sr, i, attr, eps, size, date) {
+    const pv = satellite.propagate(sr, date);
+    const p = pv && pv.position;
+    if (!p || !isFinite(p.x)) { attr.setXYZ(i, 0, 0, 0); return; }
+    const rkm = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    this._eciToScene(p, eps, _tmpV).normalize().multiplyScalar(size * satShell(rkm));
+    attr.setXYZ(i, _tmpV.x, _tmpV.y, _tmpV.z);
+  },
+
+  addSatGroupLayers() {
+    this.satLayers = {};
+    for (const [id, def] of Object.entries(SAT_GROUPS)) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(6000 * 3), 3));
+      geo.setDrawRange(0, 0);
+      const pts = new THREE.Points(geo, new THREE.PointsMaterial({
+        size: def.size, map: hardDotTex, color: def.color, transparent: true, opacity: 0.95,
+        depthWrite: false, sizeAttenuation: false,
+      }));
+      pts.frustumCulled = false; pts.visible = false;
+      this.meshes.earth.add(pts);
+      this.satLayers[id] = { def, points: pts, catalog: null, ready: false, idx: 0, on: false, loading: false };
+    }
+  },
+
+  _applySatGroupVis() {
+    if (!this.satLayers) return;
+    const live = SCALE_MORPH < 0.02;
+    for (const id in this.satLayers) {
+      const L = this.satLayers[id];
+      L.points.visible = L.on && live && !!L.catalog;
+    }
+  },
+
+  updateSatGroups(d) {
+    if (!this.satLayers || SCALE_MORPH > 0.02) return;
+    const fresh = Math.abs(Sim.ms - Date.now()) < 45 * 86400000;
+    const eps = obliquity(d), size = PLANET_META.earth.size, date = Sim.date;
+    for (const id in this.satLayers) {
+      const L = this.satLayers[id];
+      if (!L.on || !L.catalog) continue;
+      const attr = L.points.geometry.attributes.position, N = L.catalog.length;
+      if (!fresh) { L.points.geometry.setDrawRange(0, 0); continue; }
+      if (!L.ready) {                                          // one-time full populate
+        for (let i = 0; i < N; i++) this._placeSat(L.catalog[i], i, attr, eps, size, date);
+        L.ready = true; L.idx = 0; L.points.geometry.setDrawRange(0, N); attr.needsUpdate = true;
+        continue;
+      }
+      let i = L.idx;                                           // refresh ~400/frame, cycling
+      for (let c = 0; c < 400 && i < N; c++, i++) this._placeSat(L.catalog[i], i, attr, eps, size, date);
+      L.idx = i >= N ? 0 : i;
+      attr.needsUpdate = true;
+    }
   },
 
   updateStarlink(d) {
@@ -2034,8 +2147,8 @@ const Orrery = {
       u.crossVectors(n, zc); if (u.lengthSq() < 1e-6) u.set(1, 0, 0); u.normalize();
       v.crossVectors(n, u).normalize();
       const pv = satellite.propagate(sr, Sim.date);
-      let f = 1.44;
-      if (pv && pv.position) { const rk = Math.hypot(pv.position.x, pv.position.y, pv.position.z); f = Math.min(3.4, 1 + 0.38 * Math.pow(Math.max(rk - 6371, 150) / 420, 0.55)); }
+      let f = satShell(6921);
+      if (pv && pv.position) f = satShell(Math.hypot(pv.position.x, pv.position.y, pv.position.z));
       const R = size * f;
       c.setHSL(((O / (2 * Math.PI)) % 1 + 1) % 1, 0.7, 0.6);
       const SEG = 48, ring = [];
@@ -2412,6 +2525,7 @@ const Orrery = {
     for (const g of this.magFields) g.visible = vis && this.showMag;
     if (this.satPoints) this.satPoints.visible = vis && this.showSats;
     this._applyStarlinkVis();
+    this._applySatGroupVis();
     this._rebuildOrbits();
   },
 
@@ -2835,6 +2949,7 @@ const Orrery = {
     this.updateISS(d);
     this.updateSats(d);
     this.updateStarlink(d);
+    this.updateSatGroups(d);
     this.updateScopes(d);
     this.updateHalley(d);
     this.updatePing();
