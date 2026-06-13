@@ -936,7 +936,7 @@
       <div class="help-section">
         <h3>📱 Mobile</h3>
         <div class="help-rows">
-          <div class="help-row"><span class="icon">🔭</span><span><strong>Gyro / AR mode</strong> — tap the <kbd>Gyro</kbd> pill (iOS: grant motion permission when prompted), then hold your phone up and aim at the sky. The view follows where your phone points, compass-referenced.</span></div>
+          <div class="help-row"><span class="icon">🔭</span><span><strong>Gyro / AR mode</strong> — on phones this turns on automatically when you open Sky View (iOS: grant motion permission when prompted). Hold your phone up and aim at the sky — the view follows where you point, compass-referenced. Drag to take over manually; tap the <kbd>Point at sky</kbd> pill to switch it back on.</span></div>
           <div class="help-row"><span class="icon">🤏</span><span><strong>Pinch to zoom</strong> in Sky View and the Orrery.</span></div>
           <div class="help-row"><span class="icon">☰</span><span><strong>☰ Controls</strong> pill collapses the right-side toggle stack — tap to show/hide.</span></div>
           <div class="help-row"><span class="icon">⏱</span><span>Tap the <strong>⏱</strong> chip at the bottom to show the time bar; tap again to fold it away for a full-screen view.</span></div>
@@ -3685,6 +3685,15 @@ const Sky = {
     if (this._gyroPill) this._gyroPill.classList.remove('on');
   },
 
+  // On by default on mobile: the first time Sky View is opened, switch gyro on.
+  // Must ride a user gesture (the tab tap) so iOS will show its motion prompt.
+  // Attempted once — if the user later turns it off, we don't fight them.
+  _maybeAutoGyro() {
+    if (!IS_TOUCH || !this._gyroPill || this.gyroActive || this._gyroTried) return;
+    this._gyroTried = true;
+    this.toggleGyro();
+  },
+
   // World-space alt/az of a body sprite (group rotation applied)
   _bodyAltAz(name) {
     if (name === 'iss') return this._issAltAz || { alt: -1, az: 0 };
@@ -3989,7 +3998,7 @@ document.getElementById('tabs').addEventListener('click', e => {
   document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + activeView));
   updateTimeBarUI();
   if (activeView === 'orrery') Orrery.resize();
-  if (activeView === 'sky') Sky.resize();
+  if (activeView === 'sky') { Sky.resize(); Sky._maybeAutoGyro(); }
 });
 
 /* ---- Tonight's sky: naked-eye visibility for the coming night ---- */
