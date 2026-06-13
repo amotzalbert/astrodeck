@@ -365,20 +365,13 @@
   @media (max-width: 760px) { #true-scale-banner { display: none; } }
 
   #scale-lens {
-    position: absolute; left: 50%; top: 40%;
-    transform: translate(-50%, -50%) scale(.9);
+    position: absolute; left: 0; top: 0;
+    transform: scale(.88); transform-origin: center;
     width: 300px; height: 300px; z-index: 30;
-    opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s;
+    opacity: 0; pointer-events: none; transition: opacity .22s, transform .22s;
   }
-  #scale-lens.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+  #scale-lens.open { opacity: 1; transform: scale(1); }
   #scale-lens canvas { width: 300px; height: 300px; display: block; }
-  #scale-lens .lens-close {
-    position: absolute; top: 8px; right: 8px; width: 30px; height: 30px;
-    display: grid; place-items: center; cursor: pointer;
-    background: rgba(13,19,36,.75); border: 1px solid rgba(150,210,255,.4);
-    border-radius: 8px; color: #bfe2ff; font-size: 13px; transition: border-color .15s;
-  }
-  #scale-lens .lens-close:hover { border-color: rgba(150,210,255,.8); }
   @media (max-width: 760px) { #scale-lens, #scale-lens canvas { width: 240px; height: 240px; } }
 
   /* ---------- Location modal ---------- */
@@ -701,7 +694,7 @@
     <div class="hint">Drag to orbit · Scroll to zoom · Click a planet for details</div>
     <div class="toggle-stack" id="orrery-toggles"></div>
     <canvas id="true-scale-banner" width="1312" height="300"></canvas>
-    <div id="scale-lens"><canvas width="600" height="600"></canvas><button class="lens-close" title="Close">✕</button></div>
+    <div id="scale-lens"><canvas width="600" height="600"></canvas></div>
   </section>
 
   <!-- ============ SKY VIEW ============ -->
@@ -842,7 +835,7 @@
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
-          <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can tap any glowing marker to magnify that planet against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
+          <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker to magnify that planet against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
           <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
@@ -1421,6 +1414,7 @@ function eclToScene(p) {
 const ORIGIN = new THREE.Vector3();
 const _tmpV = new THREE.Vector3();
 const _tmpV2 = new THREE.Vector3();
+const _lensNdc = new THREE.Vector2();
 // Device-orientation → camera (classic three.js DeviceOrientationControls math)
 const GYRO_ZEE = new THREE.Vector3(0, 0, 1);
 const GYRO_Q1 = new THREE.Quaternion(-Math.sqrt(0.5), 0, 0, Math.sqrt(0.5)); // -90° about X: device back → view
@@ -1599,18 +1593,21 @@ const Orrery = {
     this.renderer.domElement.addEventListener('pointerdown', e => { this._down = [e.clientX, e.clientY]; });
     this.renderer.domElement.addEventListener('pointerup', e => {
       if (!this._down || Math.hypot(e.clientX - this._down[0], e.clientY - this._down[1]) > 5) return;
-      if (this.lensOpen) { this.closeLens(); return; }       // a click anywhere dismisses the lens
       const rect = this.renderer.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1
       );
+      if (IS_TOUCH) {                                         // touch: tap a marker to open, tap again to close
+        if (this.lensOpen) { this.closeLens(); return; }
+        if (SCALE_MORPH > 0.6 && this.lensTargets) {
+          this.raycaster.setFromCamera(ndc, this.camera);
+          const lh = this.raycaster.intersectObjects(this.lensTargets, false);
+          if (lh.length) { this.openLens(lh[0].object.userData.lensPlanet, e.clientX - rect.left, e.clientY - rect.top); return; }
+        }
+      }
       this.raycaster.setFromCamera(ndc, this.camera);
       this.raycaster.params.Points = { threshold: 2 };
-      if (SCALE_MORPH > 0.6 && this.lensTargets) {           // true scale: a diamond opens the lens
-        const lh = this.raycaster.intersectObjects(this.lensTargets, false);
-        if (lh.length) { this.openLens(lh[0].object.userData.lensPlanet); return; }
-      }
       const hits = this.raycaster.intersectObjects(this.clickables, false)
         .filter(h => h.object.visible);                        // hidden moons/ISS shouldn't catch clicks
       if (hits.length) {
@@ -1623,6 +1620,25 @@ const Orrery = {
       }
     });
 
+    // Desktop: hover a ghost marker to magnify that planet; hover away to dismiss.
+    if (!IS_TOUCH) {
+      this.renderer.domElement.addEventListener('pointermove', e => {
+        if (e.buttons !== 0) return;                          // ignore while dragging the view
+        if (SCALE_MORPH <= 0.6 || !this.lensTargets) { if (this.lensOpen) this.closeLens(); return; }
+        const rect = this.renderer.domElement.getBoundingClientRect();
+        _lensNdc.set(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
+        this.raycaster.setFromCamera(_lensNdc, this.camera);
+        const lh = this.raycaster.intersectObjects(this.lensTargets, false);
+        if (lh.length) {
+          const planet = lh[0].object.userData.lensPlanet;
+          lh[0].object.getWorldPosition(_tmpV).project(this.camera);
+          this.openLens(planet, (_tmpV.x + 1) / 2 * rect.width, (1 - _tmpV.y) / 2 * rect.height);
+        } else if (this.lensOpen) {
+          this.closeLens();
+        }
+      });
+    }
+
     const resetBtn = document.createElement('button');
     resetBtn.className = 'toggle-pill';
     resetBtn.innerHTML = `<span style="font-size:13px;line-height:0">⟲</span>Sun view`;
@@ -1633,7 +1649,6 @@ const Orrery = {
       document.getElementById('orrery-info').classList.remove('open');
     };
     document.getElementById('orrery-toggles').appendChild(resetBtn);
-    document.querySelector('#scale-lens .lens-close').onclick = () => this.closeLens();
 
     buildToggles('orrery-toggles', [
       { label: 'Orbit paths', get: () => this.showOrbits, set: v => { this.showOrbits = v; this.scene.traverse(o => { if (o.userData.isOrbit) o.visible = v; }); } },
@@ -1897,13 +1912,23 @@ const Orrery = {
   },
 
   // ---- Magnifier lens (C): the clicked planet under glass, a body for scale ----
-  openLens(planet) {
-    this._drawLens(planet);
+  openLens(planet, sx, sy) {
+    if (this.lensHover !== planet) { this._drawLens(planet); this.lensHover = planet; }
+    if (sx != null) {                                        // float beside the marker, clamped to the view
+      const el = this.renderer.domElement, w = el.clientWidth, h = el.clientHeight;
+      const lens = document.getElementById('scale-lens'), sz = lens.offsetWidth || 300, half = sz / 2;
+      const padR = w > 760 ? 205 : 8;                         // keep clear of the controls stack on desktop
+      let cx = sx + half + 26;
+      if (cx + half > w - padR) cx = sx - half - 26;
+      lens.style.left = Math.max(8, Math.min(cx - half, w - sz - padR)) + 'px';
+      lens.style.top = Math.max(8, Math.min(sy - half, h - sz - 8)) + 'px';
+    }
     this.lensOpen = true;
     document.getElementById('scale-lens').classList.add('open');
   },
   closeLens() {
     this.lensOpen = false;
+    this.lensHover = null;
     document.getElementById('scale-lens').classList.remove('open');
   },
   _lensSphere(ctx, x, y, r, col, name) {
