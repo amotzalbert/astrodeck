@@ -364,6 +364,23 @@
   }
   @media (max-width: 760px) { #true-scale-banner { display: none; } }
 
+  #scale-lens {
+    position: absolute; left: 50%; top: 40%;
+    transform: translate(-50%, -50%) scale(.9);
+    width: 300px; height: 300px; z-index: 30;
+    opacity: 0; pointer-events: none; transition: opacity .3s, transform .3s;
+  }
+  #scale-lens.open { opacity: 1; pointer-events: auto; transform: translate(-50%, -50%) scale(1); }
+  #scale-lens canvas { width: 300px; height: 300px; display: block; }
+  #scale-lens .lens-close {
+    position: absolute; top: 8px; right: 8px; width: 30px; height: 30px;
+    display: grid; place-items: center; cursor: pointer;
+    background: rgba(13,19,36,.75); border: 1px solid rgba(150,210,255,.4);
+    border-radius: 8px; color: #bfe2ff; font-size: 13px; transition: border-color .15s;
+  }
+  #scale-lens .lens-close:hover { border-color: rgba(150,210,255,.8); }
+  @media (max-width: 760px) { #scale-lens, #scale-lens canvas { width: 240px; height: 240px; } }
+
   /* ---------- Location modal ---------- */
   .modal-backdrop {
     position: fixed; inset: 0;
@@ -684,6 +701,7 @@
     <div class="hint">Drag to orbit · Scroll to zoom · Click a planet for details</div>
     <div class="toggle-stack" id="orrery-toggles"></div>
     <canvas id="true-scale-banner" width="1312" height="300"></canvas>
+    <div id="scale-lens"><canvas width="600" height="600"></canvas><button class="lens-close" title="Close">✕</button></div>
   </section>
 
   <!-- ============ SKY VIEW ============ -->
@@ -824,7 +842,7 @@
           <div class="help-row"><span class="icon">🌙</span><span><strong>12 major moons</strong> are shown when you focus their parent planet — Phobos, Io, Europa, Titan, Triton and more, all with real JPL Horizons orbital data.</span></div>
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellites</strong> — the ~150 brightest known objects in orbit (Tiangong, rocket bodies…), SGP4-propagated from fresh Celestrak TLEs around Earth.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
-          <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
+          <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can tap any glowing marker to magnify that planet against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
           <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
@@ -1581,6 +1599,7 @@ const Orrery = {
     this.renderer.domElement.addEventListener('pointerdown', e => { this._down = [e.clientX, e.clientY]; });
     this.renderer.domElement.addEventListener('pointerup', e => {
       if (!this._down || Math.hypot(e.clientX - this._down[0], e.clientY - this._down[1]) > 5) return;
+      if (this.lensOpen) { this.closeLens(); return; }       // a click anywhere dismisses the lens
       const rect = this.renderer.domElement.getBoundingClientRect();
       const ndc = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -1588,6 +1607,10 @@ const Orrery = {
       );
       this.raycaster.setFromCamera(ndc, this.camera);
       this.raycaster.params.Points = { threshold: 2 };
+      if (SCALE_MORPH > 0.6 && this.lensTargets) {           // true scale: a diamond opens the lens
+        const lh = this.raycaster.intersectObjects(this.lensTargets, false);
+        if (lh.length) { this.openLens(lh[0].object.userData.lensPlanet); return; }
+      }
       const hits = this.raycaster.intersectObjects(this.clickables, false)
         .filter(h => h.object.visible);                        // hidden moons/ISS shouldn't catch clicks
       if (hits.length) {
@@ -1610,6 +1633,7 @@ const Orrery = {
       document.getElementById('orrery-info').classList.remove('open');
     };
     document.getElementById('orrery-toggles').appendChild(resetBtn);
+    document.querySelector('#scale-lens .lens-close').onclick = () => this.closeLens();
 
     buildToggles('orrery-toggles', [
       { label: 'Orbit paths', get: () => this.showOrbits, set: v => { this.showOrbits = v; this.scene.traverse(o => { if (o.userData.isOrbit) o.visible = v; }); } },
@@ -1665,7 +1689,6 @@ const Orrery = {
     this.addMilkyWay();
     this.addSatLayer();
     this.addHalley();
-    this.addScaleShelf();
     this.addScaleMarkers();
 
     // Sun light dimmer
@@ -1829,72 +1852,12 @@ const Orrery = {
     attr.needsUpdate = true;
   },
 
-  // ---- True-scale extras: 3D specimen shelf (A) + ghost markers (B) ----
-  addScaleShelf() {
-    this.scene.add(this.camera);                             // children of the camera need it in the graph
-    const g = new THREE.Group();
-    g.visible = false;
-    this.camera.add(g);
-    this.scaleShelf = g;
-    this._shelfSpin = [];
-    this._shelfLabels = [];
-    const dl = new THREE.DirectionalLight(0xffffff, 2.4);
-    dl.position.set(-6, 2, 3);
-    g.add(dl, dl.target);
-    const K = 0.55 / 71492;                                  // Jupiter = 0.55 shelf units
-    const sun = new THREE.Mesh(new THREE.SphereGeometry(696000 * K, 48, 48),
-      new THREE.MeshBasicMaterial({ color: 0xffd27d }));
-    applyTexture(sun.material, TEXTURES.sun);
-    sun.position.set(-696000 * K + 0.12, 0, 0);
-    g.add(sun);
-    const slbl = document.createElement('div');
-    slbl.className = 'obj-label moon-label';
-    slbl.style.cssText = 'color:#ffd9a0;padding-left:0;text-align:center';
-    slbl.innerHTML = 'SUN<br>1,392,700 KM';
-    const sunLabel = new CSS2DObject(slbl);
-    sunLabel.position.set(696000 * K + 0.25, -1.85, 0);
-    sunLabel.visible = false;
-    sun.add(sunLabel);
-    this._shelfLabels.push(sunLabel);
-    const DEFS = [
-      ['mercury', 2440, 0.55], ['venus', 6052, 1.35], ['earth', 6371, 2.15], ['mars', 3390, 2.95],
-      ['jupiter', 69911, 3.7], ['saturn', 58232, 5.5], ['uranus', 25362, 6.9], ['neptune', 24622, 7.8],
-    ];
-    for (const [name, rkm, x] of DEFS) {
-      const r = Math.max(rkm * K, 0.013);
-      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 28),
-        new THREE.MeshStandardMaterial({ color: PLANET_META[name].color, roughness: 0.8, metalness: 0.05 }));
-      if (TEXTURES[name]) applyTexture(m.material, TEXTURES[name]);
-      m.position.set(x, 0, 0);
-      if (name === 'saturn') {
-        const rg = new THREE.RingGeometry(r * 1.45, r * 2.3, 64);
-        const rp = rg.attributes.position, ruv = rg.attributes.uv, v3 = new THREE.Vector3();
-        for (let k2 = 0; k2 < rp.count; k2++) {
-          v3.fromBufferAttribute(rp, k2);
-          ruv.setXY(k2, (v3.length() - r * 1.45) / (r * 0.85), 0.5);
-        }
-        const rmat = new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
-        applyTexture(rmat, TEXTURES.saturnRing);
-        const ring = new THREE.Mesh(rg, rmat);
-        ring.rotation.x = Math.PI / 2 - 0.45;
-        m.add(ring);
-      }
-      const el = document.createElement('div');
-      el.className = 'obj-label moon-label';
-      el.style.cssText = 'color:#9fd2ff;padding-left:0;text-align:center';
-      el.innerHTML = `${name.toUpperCase()}<br>${(rkm * 2).toLocaleString()} KM`;
-      const lbl = new CSS2DObject(el);
-      lbl.position.y = -(0.85 + (this._shelfSpin.length % 2) * 0.62);   // staggered rows
-      lbl.visible = false;
-      m.add(lbl);
-      this._shelfLabels.push(lbl);
-      g.add(m);
-      this._shelfSpin.push(m);
-    }
-  },
-
+  // ---- True-scale extras: ghost markers (B) + magnifier lens (C) ----
+  // Ghost markers (B): a stem + clickable diamond at each planet's true
+  // position in the void. Clicking one opens the magnifier lens (C).
   addScaleMarkers() {
     this.scaleMarkers = [];
+    this.lensTargets = [];
     const lmat = new THREE.LineBasicMaterial({ color: 0x9fd2ff, transparent: true, opacity: 0.5 });
     const dmat = new THREE.MeshBasicMaterial({ color: 0x9fd2ff, transparent: true, opacity: 0.85 });
     for (const name of PLANET_NAMES) {
@@ -1904,6 +1867,12 @@ const Orrery = {
       const dia = new THREE.Mesh(new THREE.OctahedronGeometry(0.3), dmat);
       dia.position.y = 3.3;
       grp.add(dia);
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(2.4, 8, 8),
+        new THREE.MeshBasicMaterial({ visible: false }));
+      hit.position.y = 3.3;
+      hit.userData.lensPlanet = name;
+      grp.add(hit);
+      this.lensTargets.push(hit);
       grp.visible = false;
       this.scene.add(grp);
       this.scaleMarkers.push({ group: grp, planet: name });
@@ -1912,19 +1881,8 @@ const Orrery = {
 
   _updateScaleExtras() {
     const on = SCALE_MORPH > 0.6;
-    if (this.scaleShelf) {
-      this.scaleShelf.visible = on;
-      for (const l of this._shelfLabels) l.visible = on;     // CSS2D ignores ancestor visibility
-      if (on) {
-        const dist = 11;
-        const h = 2 * dist * Math.tan(this.camera.fov * DEG / 2);
-        const w = h * this.camera.aspect;
-        const fit = Math.min(1, (w - 1.0) / 9.3);
-        this.scaleShelf.scale.setScalar(fit);
-        this.scaleShelf.position.set(-w / 2 + 0.55, h / 2 - 1.6 * fit - 0.4, -dist);
-        for (const m of this._shelfSpin) m.rotation.y += 0.003;
-      }
-    }
+    const banner = document.getElementById('true-scale-banner');
+    if (banner) banner.style.opacity = (this.lensOpen ? 0 : SCALE_MORPH * 0.95).toFixed(2);
     if (this.scaleMarkers) {
       for (const mk of this.scaleMarkers) {
         mk.group.visible = on;
@@ -1935,6 +1893,88 @@ const Orrery = {
         }
       }
     }
+    if (!on && this.lensOpen) this.closeLens();              // left true scale → close lens
+  },
+
+  // ---- Magnifier lens (C): the clicked planet under glass, a body for scale ----
+  openLens(planet) {
+    this._drawLens(planet);
+    this.lensOpen = true;
+    document.getElementById('scale-lens').classList.add('open');
+  },
+  closeLens() {
+    this.lensOpen = false;
+    document.getElementById('scale-lens').classList.remove('open');
+  },
+  _lensSphere(ctx, x, y, r, col, name) {
+    const ringed = name === 'saturn';
+    if (ringed) {                                            // far ring arc behind the body
+      ctx.strokeStyle = 'rgba(210,194,150,.5)'; ctx.lineWidth = Math.max(1.5, r * 0.16);
+      ctx.beginPath(); ctx.ellipse(x, y, r * 1.95, r * 0.62, -0.4, 0, Math.PI); ctx.stroke();
+    }
+    const g = ctx.createRadialGradient(x - r * 0.45, y - r * 0.4, r * 0.1, x, y, r);
+    g.addColorStop(0, col[0]); g.addColorStop(1, col[1]);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    if (name === 'jupiter' || name === 'saturn') {
+      ctx.save(); ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.clip();
+      ctx.fillStyle = 'rgba(120,82,46,.4)';
+      for (const b of [[-.55, .1], [-.28, .08], [.02, .12], [.32, .09], [.55, .07]])
+        ctx.fillRect(x - r, y + b[0] * r, 2 * r, b[1] * r);
+      if (name === 'jupiter') {
+        ctx.fillStyle = 'rgba(205,95,62,.5)';
+        ctx.beginPath(); ctx.ellipse(x + r * 0.3, y + r * 0.15, r * 0.18, r * 0.1, 0, 0, 7); ctx.fill();
+      }
+      ctx.restore();
+    }
+    const sh = ctx.createRadialGradient(x + r * 0.65, y + r * 0.3, 0, x + r * 0.65, y + r * 0.3, r * 1.25);
+    sh.addColorStop(0, 'rgba(0,0,0,0)'); sh.addColorStop(1, 'rgba(2,4,10,.5)');
+    ctx.fillStyle = sh; ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill();
+    if (ringed) {                                            // near ring arc in front
+      ctx.strokeStyle = 'rgba(230,212,170,.85)'; ctx.lineWidth = Math.max(1.5, r * 0.16);
+      ctx.beginPath(); ctx.ellipse(x, y, r * 1.95, r * 0.62, -0.4, Math.PI, 2 * Math.PI); ctx.stroke();
+    }
+  },
+  _drawLens(planet) {
+    const cv = document.querySelector('#scale-lens canvas'), ctx = cv.getContext('2d');
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, 300, 300);
+    const S = 150, R = 142;
+    const DIA = { mercury: 4879, venus: 12104, earth: 12756, mars: 6779, jupiter: 139820, saturn: 116460, uranus: 50724, neptune: 49244, moon: 3474 };
+    const COL = {
+      mercury: ['#cfc8bc', '#5c5850'], venus: ['#f6e2b4', '#8a6f42'], earth: ['#8cc0f0', '#1d3f7a'],
+      mars: ['#e89668', '#7a3c22'], jupiter: ['#eed7a8', '#8a5f33'], saturn: ['#eedfb2', '#9a8050'],
+      uranus: ['#bfe9ef', '#4a8a96'], neptune: ['#7a9bf0', '#23377e'], moon: ['#d8d8dc', '#5c5c64'],
+    };
+    ctx.save();
+    ctx.beginPath(); ctx.arc(S, S, R, 0, 7); ctx.clip();
+    const bg = ctx.createRadialGradient(S, S, R * 0.35, S, S, R);
+    bg.addColorStop(0, 'rgba(8,12,22,.97)'); bg.addColorStop(1, 'rgba(10,16,30,.98)');
+    ctx.fillStyle = bg; ctx.fillRect(0, 0, 300, 300);
+    const scaleBody = planet === 'earth' ? 'moon' : 'earth';
+    const pDia = DIA[planet], sDia = DIA[scaleBody], maxD = Math.max(pDia, sDia);
+    const pr = pDia / maxD * 46, sr = sDia / maxD * 46;
+    this._lensSphere(ctx, 120, 120, pr, COL[planet], planet);
+    this._lensSphere(ctx, 200, 196, sr, COL[scaleBody], scaleBody);
+    ctx.restore();
+    ctx.shadowColor = 'rgba(120,200,255,.8)'; ctx.shadowBlur = 16;
+    ctx.strokeStyle = 'rgba(170,225,255,.95)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(S, S, R, 0, 7); ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(170,225,255,.3)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(S, S, R - 5, 0, 7); ctx.stroke();
+    try { ctx.letterSpacing = '1.5px'; } catch (e) {}
+    ctx.textAlign = 'center';
+    ctx.font = '600 13px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+    ctx.fillStyle = '#cfe9ff'; ctx.fillText(planet.toUpperCase(), S, 32);
+    ctx.font = '600 9px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+    ctx.fillStyle = 'rgba(150,210,255,.75)'; ctx.fillText(pDia.toLocaleString() + ' KM', S, 46);
+    const ratio = pDia / sDia;
+    ctx.font = '600 10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+    ctx.fillStyle = '#bfe2ff';
+    ctx.fillText('×' + (ratio < 10 ? ratio.toFixed(2) : ratio.toFixed(1)) + ' ' + scaleBody.toUpperCase(), S, 262);
+    ctx.font = '600 8px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+    ctx.fillStyle = 'rgba(150,210,255,.65)';
+    ctx.fillText(scaleBody.toUpperCase(), 200, 196 + sr + 12);
+    ctx.textAlign = 'left';
   },
 
   // ---- Halley's Comet ----
