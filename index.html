@@ -164,11 +164,8 @@
     box-shadow: 0 8px 24px rgba(0,0,0,0.5);
   }
   .time-restore.show { display: flex; }
-  .stack-toggle { display: none; }
-  @media (max-width: 760px) {
-    .stack-toggle { display: flex; }
-    .toggle-stack.folded > *:not(.stack-toggle) { display: none; }
-  }
+  /* Mobile control-sheet scaffolding — hidden on desktop, activated in the ≤760px block */
+  .stack-fab, .sheet-backdrop, .sheet-head, .stack-section { display: none; }
   .ctrl-bar .sep { width: 1px; height: 22px; background: var(--border-soft); }
   .icon-btn {
     appearance: none; cursor: pointer;
@@ -648,13 +645,80 @@
   ::-webkit-scrollbar-thumb:hover { background: rgba(94,234,212,0.3); }
 
   @media (max-width: 760px) {
-    header { gap: 10px; padding: 0 10px; }
+    /* ---- Header: scrollable tabs, clear the help button ---- */
+    header { gap: 8px; padding: 0 48px 0 10px; }
     .logo .sub { display: none; }
-    #chip-clock { display: none; }
-    nav.tabs button { padding: 7px 9px; font-size: 11px; }
+    .logo .mark { font-size: 15px; letter-spacing: 2px; }
+    #chip-clock, .spacer { display: none; }
+    nav.tabs { flex: 1 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+    nav.tabs::-webkit-scrollbar { display: none; }
+    nav.tabs button { padding: 7px 10px; font-size: 11px; white-space: nowrap; }
+    .hud-chip#chip-location { flex: 0 0 auto; max-width: 104px; overflow: hidden; white-space: nowrap; font-size: 10px; padding: 5px 9px; }
+    #chip-location #loc-label { overflow: hidden; text-overflow: ellipsis; }
+    #help-btn { top: 13px; right: 11px; width: 28px; height: 28px; font-size: 13px; }
     .hint { display: none; }
-    .toggle-stack { top: 8px; right: 8px; }
-    .toggle-pill { padding: 7px 9px; font-size: 9.5px; }
+
+    /* Time controls step aside while the control sheet is open */
+    body.sheet-open .ctrl-bar, body.sheet-open .time-restore { opacity: 0; pointer-events: none; }
+
+    /* ---- Controls become a slide-up bottom sheet ---- */
+    .toggle-stack {
+      position: fixed; inset: auto 0 0 0; top: auto; right: 0;
+      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start;
+      max-height: 82vh; overflow-y: auto; -webkit-overflow-scrolling: touch;
+      padding: 0 14px calc(18px + env(safe-area-inset-bottom)) 14px;
+      background: rgba(10,15,28,0.96); backdrop-filter: blur(18px);
+      border-top: 1px solid var(--border); border-radius: 18px 18px 0 0;
+      box-shadow: 0 -12px 44px rgba(0,0,0,0.62);
+      transform: translateY(100%); transition: transform .32s cubic-bezier(.22,.61,.36,1);
+      z-index: 61;
+    }
+    .toggle-stack:not(.folded) { transform: translateY(0); }
+    .toggle-pill { font-size: 11px; padding: 11px 12px; }   /* bigger touch targets */
+    .dimmer-pill, #starlink-pill, .sky-select { grid-column: 1 / -1; }
+    .dimmer-pill input[type="range"] { width: 100%; flex: 1; }
+
+    .sheet-head {
+      display: flex; align-items: center; gap: 10px; grid-column: 1 / -1;
+      position: sticky; top: 0; z-index: 3;
+      margin: 0 -14px 2px; padding: 14px 14px 9px;
+      background: rgba(10,15,28,0.99); border-bottom: 1px solid var(--border-soft);
+    }
+    .sheet-head .grab {
+      position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+      width: 38px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.22);
+    }
+    .sheet-head .sheet-title {
+      font-family: var(--font); font-size: 12px; font-weight: 600;
+      letter-spacing: 1.5px; text-transform: uppercase; color: var(--text);
+    }
+    .sheet-head .sheet-x {
+      margin-left: auto; appearance: none; cursor: pointer;
+      width: 30px; height: 30px; border-radius: 8px;
+      background: rgba(255,255,255,0.06); border: 1px solid var(--border-soft); color: var(--text); font-size: 13px;
+    }
+    .stack-section {
+      display: block; grid-column: 1 / -1;
+      font-family: var(--mono); font-size: 9.5px; letter-spacing: 1.5px;
+      text-transform: uppercase; color: var(--accent); opacity: 0.72;
+      margin: 9px 2px 1px;
+    }
+    .stack-fab {
+      display: flex; align-items: center; gap: 7px;
+      position: fixed; right: 12px; bottom: calc(84px + env(safe-area-inset-bottom)); z-index: 48;
+      appearance: none; cursor: pointer; padding: 11px 16px; border-radius: 999px;
+      background: linear-gradient(135deg, rgba(94,234,212,0.22), rgba(56,189,248,0.17));
+      border: 1px solid rgba(94,234,212,0.42); color: var(--accent);
+      font-family: var(--font); font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+      box-shadow: 0 6px 22px rgba(0,0,0,0.5);
+    }
+    .sheet-backdrop {
+      display: block; position: fixed; inset: 0; z-index: 60;
+      background: rgba(4,7,14,0.55); backdrop-filter: blur(2px);
+      opacity: 0; pointer-events: none; transition: opacity .3s;
+    }
+    .sheet-backdrop.show { opacity: 1; pointer-events: auto; }
+
     .info-card {                                   /* bottom sheet on phones */
       top: auto; bottom: 76px; left: 8px; right: 8px;
       width: auto; max-height: 46vh; overflow-y: auto;
@@ -4002,14 +4066,54 @@ function updateTimeBarUI() {
 document.getElementById('t-fold').onclick = () => { timeBarFolded = true; updateTimeBarUI(); };
 tRestoreEl.onclick = () => { timeBarFolded = false; updateTimeBarUI(); };
 
-function makeStackCollapsible(hostId) {
+// Turn a toggle-stack into a slide-up bottom sheet on mobile (desktop ignores all
+// of this — the extra elements are display:none above the breakpoint). A floating
+// FAB opens it, a dimmed backdrop and an ✕ close it; the stack itself becomes a
+// scrollable 2-column grid so every control is reachable.
+function makeStackCollapsible(hostId, title) {
   const host = document.getElementById(hostId);
-  const btn = document.createElement('button');
-  btn.className = 'toggle-pill stack-toggle';
-  btn.innerHTML = `<span style="font-size:13px;line-height:0">☰</span>Controls`;
-  btn.onclick = () => host.classList.toggle('folded');
-  host.prepend(btn);
-  host.classList.add('folded');                              // CSS applies this on mobile only
+  const section = host.parentElement;                        // the .view — hidden when inactive
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'sheet-backdrop';
+  section.appendChild(backdrop);
+
+  const head = document.createElement('div');
+  head.className = 'sheet-head';
+  head.innerHTML = `<span class="grab"></span><span class="sheet-title">${title || 'Controls'}</span>`
+    + `<button class="sheet-x" aria-label="Close controls">✕</button>`;
+  host.prepend(head);
+
+  const fab = document.createElement('button');
+  fab.className = 'stack-fab';
+  fab.innerHTML = `<span style="font-size:14px;line-height:0">☰</span>Controls`;
+  section.appendChild(fab);
+
+  const open = v => {
+    host.classList.toggle('folded', !v);
+    backdrop.classList.toggle('show', v);
+    document.body.classList.toggle('sheet-open', v);        // hides the time bar/clock beneath
+  };
+  fab.onclick = () => open(true);
+  backdrop.onclick = () => open(false);
+  head.querySelector('.sheet-x').onclick = () => open(false);
+  host.classList.add('folded');                              // starts closed; no-op on desktop
+}
+
+// Insert section headers into a stack before the first child matching each needle.
+// Needles are matched against trimmed textContent; '@dimmer' targets the first slider.
+function addStackSections(hostId, defs) {
+  const host = document.getElementById(hostId);
+  for (const [titleText, needle] of defs) {
+    const target = [...host.children].find(el =>
+      needle === '@dimmer' ? el.classList.contains('dimmer-pill')
+                           : el.textContent.trim().includes(needle));
+    if (!target) continue;
+    const h = document.createElement('div');
+    h.className = 'stack-section';
+    h.textContent = titleText;
+    host.insertBefore(h, target);
+  }
 }
 
 /* ---- Time controls ---- */
@@ -4549,8 +4653,20 @@ buildFeeds();
 Orrery.init();
 Sky.init();
 initISS();
-makeStackCollapsible('orrery-toggles');
-makeStackCollapsible('sky-toggles');
+makeStackCollapsible('orrery-toggles', 'Controls');
+makeStackCollapsible('sky-toggles', 'Sky Controls');
+addStackSections('orrery-toggles', [
+  ['Display', 'Sun view'],
+  ['Orbiting Earth', 'ISS'],
+  ['Satellites', 'Navigation'],
+  ['Layers & fields', 'Moons & rings'],
+  ['Tools', 'True scale'],
+  ['Brightness', '@dimmer'],
+]);
+addStackSections('sky-toggles', [
+  ['View', 'Tonight'],
+  ['Sky layers', 'Milky Way'],
+]);
 updateTimeBarUI();
 refreshSpeedUI();
 {
