@@ -3631,6 +3631,9 @@ const MISSIONS = {
       { jd: 2460668.5, t: 'Closest approach ever', d: 'Dec 24 2024 — 6.1 million km from the surface at 692,000 km/h. Watch the orbit whip around perihelion.' },
     ],
   },
+  /* Apollo 11 — temporarily withdrawn from the lineup (model/reconstruction WIP).
+     All staging code (_buildApollo, _apolloPos, _apolloStage, secondaries) is kept
+     intact; restore by un-commenting this catalog entry.
   apollo11: {
     name: 'Apollo 11', year: '1969', icon: '🌙', custom: 'apollo11', craft: 'apollo', speed: 21600,
     desc: 'Eight days in July 1969 — the first crewed landing on another world, replayed on its real timeline. Reconstructed geometry, real dates.',
@@ -3646,6 +3649,7 @@ const MISSIONS = {
       { jd: 2440427.2, t: 'Splashdown', d: 'Jul 24, 16:50 UTC — Columbia hits the Pacific. Quarantine trailer, ticker tape, and a plaque left behind: "We came in peace for all mankind."' },
     ],
   },
+  */
 };
 const Missions = {
   active: null, line: null, marker: null, _evIdx: -1,
