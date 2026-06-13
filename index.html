@@ -1655,13 +1655,6 @@ const Orrery = {
         node.add(moon);
         this.clickables.push(moon);
         this.earthMoonLabel = moonLabel;
-        const halo = new THREE.Sprite(new THREE.SpriteMaterial({
-          map: glowTexture('rgba(94,234,212,0.5)', 'rgba(94,234,212,0)'),
-          transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-        }));
-        halo.scale.setScalar(2.6);
-        node.add(halo);
-        this.earthHalo = halo;
       }
       const label = makeLabel(name[0].toUpperCase() + name.slice(1), 'planet');
       node.add(label);
@@ -1705,6 +1698,11 @@ const Orrery = {
           const pick = this._lensPick(e, rect);
           if (pick) { this.openLens(pick.planet, pick.sx, pick.sy); return; }
         }
+      }
+      // In true-scale mode: click a ghost marker → recenter camera on that body
+      if (!IS_TOUCH && SCALE_MORPH > 0.6 && this.lensTargets) {
+        const pick = this._lensPick(e, rect);
+        if (pick) { this.setFocus(pick.planet); return; }
       }
       this.raycaster.setFromCamera(ndc, this.camera);
       this.raycaster.params.Points = { threshold: 2 };
@@ -2515,7 +2513,6 @@ const Orrery = {
     for (const m of Object.values(this.moonMeshes)) m.visible = vis && this.showMoons;
     const em = this.meshes.earth.children.find(c => c.userData.isMoon);
     if (em) em.visible = vis;
-    if (this.earthHalo) this.earthHalo.visible = vis;
     for (const g of this.magFields) g.visible = vis && this.showMag;
     if (this.satPoints) this.satPoints.visible = vis && this.showSats;
     this._applyStarlinkVis();
