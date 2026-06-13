@@ -849,7 +849,7 @@
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
           <div class="help-row"><span class="icon">🧊</span><span><strong>Kuiper Belt</strong> — the icy debris ring beyond Neptune (~30–50 AU), home of Pluto and the comets. Most bodies cluster in the classical belt at low tilt, with a scattered tail reaching higher inclinations. Drifts slowly prograde at high time speeds and morphs honestly under true scale.</span></div>
-          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and a sun brightness slider.</span></div>
+          <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and sliders for sun &amp; Milky Way brightness.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
         </div>
       </div>
@@ -1857,6 +1857,18 @@ const Orrery = {
       valEl.textContent = slider.value + '%';
     });
     document.getElementById('orrery-toggles').appendChild(dimmer);
+
+    // Milky Way brightness dimmer
+    const mwDim = document.createElement('div');
+    mwDim.className = 'dimmer-pill';
+    mwDim.title = 'Milky Way brightness';
+    mwDim.innerHTML = `<span class="ico">🌌</span><input type="range" min="0" max="200" value="100"><span class="val">100%</span>`;
+    const mwSlider = mwDim.querySelector('input'), mwVal = mwDim.querySelector('.val');
+    mwSlider.addEventListener('input', () => {
+      this.setMWBrightness(mwSlider.value / 100);
+      mwVal.textContent = mwSlider.value + '%';
+    });
+    document.getElementById('orrery-toggles').appendChild(mwDim);
   },
 
   // Low-poly ISS: truss + module stack + 8 solar wings + radiators (+Z faces the Sun)
@@ -2710,7 +2722,7 @@ const Orrery = {
   // rotated from the equatorial frame into the scene's ecliptic frame — the
   // band crosses at its true 60° tilt, core fixed toward Sagittarius.
   addMilkyWay() {
-    const { group } = makeMilkyWay(900);
+    const { group, mats } = makeMilkyWay(900);
     const eps = 23.4393 * DEG, se = Math.sin(eps), ce = Math.cos(eps);
     group.setRotationFromMatrix(new THREE.Matrix4().makeBasis(
       new THREE.Vector3(1, 0, 0),
@@ -2719,7 +2731,14 @@ const Orrery = {
     ));
     group.visible = this.showMW;
     this.mwGroup = group;
+    this._mwMats = mats;
+    this._mwBright = 1;
     this.scene.add(group);
+  },
+
+  setMWBrightness(v) {                                         // v: 0 → 2 (slider 0–200%)
+    this._mwBright = v;
+    if (this._mwMats) for (const m of this._mwMats) m.opacity = m.userData.baseOpacity * v;
   },
 
   // Kuiper Belt: the icy debris ring beyond Neptune (~30–50 AU). Most bodies
@@ -3182,33 +3201,62 @@ function makeMilkyWay(R) {
   const rnd = () => ((s = s * 16807 % 2147483647) / 2147483647);
   const gauss = () => (rnd() + rnd() + rnd() + rnd() - 2) * 1.75;
   const bins = [
-    { size: 2.2, op: 0.26, pos: [], col: [] },
-    { size: 4.0, op: 0.16, pos: [], col: [] },
-    { size: 7.0, op: 0.09, pos: [], col: [] },
+    { size: 2.0, op: 0.30, pos: [], col: [] },                // crisp star grains
+    { size: 4.0, op: 0.17, pos: [], col: [] },                // mid haze
+    { size: 7.5, op: 0.10, pos: [], col: [] },                // soft glow
+    { size: 16,  op: 0.05, pos: [], col: [] },                // diffuse nebulosity
   ];
-  const place = (l, b) => {
+  const galToScene = (l, b) => {
     const lr = l * DEG, br = b * DEG;
     const gx = Math.cos(br) * Math.cos(lr), gy = Math.cos(br) * Math.sin(lr), gz = Math.sin(br);
-    const x = AT[0] * gx + AT[1] * gy + AT[2] * gz;
-    const y = AT[3] * gx + AT[4] * gy + AT[5] * gz;
-    const z = AT[6] * gx + AT[7] * gy + AT[8] * gz;
-    const bin = bins[Math.floor(rnd() * 3)];
-    bin.pos.push(x * R, y * R, z * R);
+    return [
+      (AT[0] * gx + AT[1] * gy + AT[2] * gz) * R,
+      (AT[3] * gx + AT[4] * gy + AT[5] * gz) * R,
+      (AT[6] * gx + AT[7] * gy + AT[8] * gz) * R,
+    ];
+  };
+  const colFor = (l, boost) => {
     const ln = ((l % 360) + 360) % 360;
     const dc = Math.min(ln, 360 - ln);                        // angular distance from the core
-    const w = Math.exp(-dc * dc / (2 * 55 * 55));
-    bin.col.push(0.72 + 0.28 * w, 0.78 + 0.17 * w, 0.95 - 0.12 * w);
+    const w = Math.exp(-dc * dc / (2 * 55 * 55));             // 1 at Sagittarius core → 0 in outer arms
+    const k = (boost || 1) * (0.82 + 0.36 * rnd());           // per-point brightness jitter
+    return [
+      Math.min(1, (0.66 + 0.36 * w) * k),                     // warm gold toward the core
+      Math.min(1, (0.73 + 0.20 * w) * k),
+      Math.min(1, (1.00 - 0.24 * w) * k),                     // cool blue in the arms
+    ];
   };
+  const pushTo = (bi, l, b, boost) => {
+    const v = galToScene(l, b);
+    bins[bi].pos.push(v[0], v[1], v[2]);
+    const c = colFor(l, boost);
+    bins[bi].col.push(c[0], c[1], c[2]);
+  };
+  const place = (l, b, boost) => pushTo(Math.floor(rnd() * 3), l, b, boost);
   for (let i = 0; i < 14000; i++) {
     const l = rnd() * 360;
     const dc = Math.min(l, 360 - l);
     if (rnd() > 0.30 + 0.70 * Math.exp(-dc * dc / (2 * 75 * 75))) continue;   // brighter toward Sgr
     const sigma = 6.5 + 4.5 * Math.exp(-dc * dc / (2 * 50 * 50));
     const b = gauss() * sigma;
-    if ((l < 65 || l > 350) && b > 0.5 && b < 5.5 && rnd() < 0.75) continue;  // Great Rift
-    place(l, b);
+    if ((l < 65 || l > 350) && b > 0.5 && b < 5.5 && rnd() < 0.78) continue;  // Great Rift dust lane
+    place(l, b, 1);
   }
-  for (let i = 0; i < 1800; i++) place(gauss() * 16, gauss() * 9);            // central bulge
+  for (let i = 0; i < 1800; i++) place(gauss() * 16, gauss() * 9, 1.15);      // central bulge — warmer
+  for (let i = 0; i < 3400; i++) {                                            // diffuse nebulosity haze
+    const l = rnd() * 360;
+    const dc = Math.min(l, 360 - l);
+    if (rnd() > 0.22 + 0.78 * Math.exp(-dc * dc / (2 * 82 * 82))) continue;
+    pushTo(3, l, gauss() * (8 + 7 * Math.exp(-dc * dc / (2 * 50 * 50))), 0.9);
+  }
+  for (const kl of [-40, -18, 6, 24, 80, 120, 205, 286, 312]) {              // bright star-forming knots
+    const cnt = 90 + Math.floor(rnd() * 70);
+    for (let i = 0; i < cnt; i++) {
+      const l = kl + gauss() * 3.2, b = gauss() * 2.4;
+      place(l, b, 1.5);
+      if (rnd() < 0.3) pushTo(2, l, b, 1.2);
+    }
+  }
   for (const bin of bins) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(bin.pos, 3));
