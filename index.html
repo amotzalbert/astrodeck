@@ -1243,23 +1243,23 @@ function issState(date) {
   return pv;
 }
 
-// Cached Celestrak GROUP fetch. Celestrak rate-limits (HTTP 403) re-downloads
-// of unchanged data, so we cache the last good copy in localStorage and reuse
-// it — both polite and resilient (a 403 falls back to the cached TLEs).
-async function fetchTLEGroup(group, maxAgeHrs) {
-  const ck = 'astrodeck.tle.' + group;
+// Cached TLE fetch. Celestrak rate-limits (HTTP 403) re-downloads of unchanged
+// data, so we cache the last good copy in localStorage and reuse it — both
+// polite and resilient (a 403/failure falls back to the cached TLEs).
+async function fetchTLECached(url, key, maxAgeHrs) {
+  const ck = 'astrodeck.tle.' + key;
   let cached = null;
   try { cached = JSON.parse(localStorage.getItem(ck) || 'null'); } catch (e) {}
   if (cached && Date.now() - cached.t < (maxAgeHrs || 12) * 3600000) return cached.txt;
   try {
-    const r = await fetch('https://celestrak.org/NORAD/elements/gp.php?GROUP=' + group + '&FORMAT=TLE');
+    const r = await fetch(url);
     const txt = await r.text();
     if (r.ok && /(^|\n)1 \d/.test(txt)) {                    // a real TLE block, not an error page
       try { localStorage.setItem(ck, JSON.stringify({ t: Date.now(), txt })); } catch (e) {}
       return txt;
     }
-    console.warn('Celestrak ' + group + ' → ' + r.status + ': ' + txt.slice(0, 70).replace(/\s+/g, ' '));
-  } catch (e) { console.warn('Celestrak ' + group + ' fetch failed', e); }
+    console.warn('TLE ' + key + ' → ' + r.status + ': ' + txt.slice(0, 70).replace(/\s+/g, ' '));
+  } catch (e) { console.warn('TLE ' + key + ' fetch failed', e); }
   return cached ? cached.txt : null;                         // stale cache beats nothing
 }
 
@@ -1271,7 +1271,7 @@ async function loadSatCatalog() {
   if (satCatalog || satLoading || typeof satellite === 'undefined') return;
   satLoading = true;
   try {
-    const txt = await fetchTLEGroup('visual', 12);
+    const txt = await fetchTLECached('https://celestrak.org/NORAD/elements/gp.php?GROUP=visual&FORMAT=TLE', 'visual', 12);
     const lines = (txt || '').trim().split(/\r?\n/);
     const out = [];
     for (let i = 0; i + 2 < lines.length; i += 3) {
@@ -1292,14 +1292,16 @@ async function loadStarlinkCatalog() {
   if (starlinkCatalog || starlinkLoading || typeof satellite === 'undefined') return;
   starlinkLoading = true;
   try {
-    const txt = await fetchTLEGroup('starlink', 12);
+    // Supplemental endpoint: operator ephemerides, ~10k sats, and not under the
+    // aggressive GP rate-limit that 403s repeat GROUP downloads.
+    const txt = await fetchTLECached('https://celestrak.org/NORAD/elements/supplemental/sup-gp.php?FILE=starlink&FORMAT=tle', 'starlink', 12);
     const lines = (txt || '').trim().split(/\r?\n/);
     const out = [];
     for (let i = 0; i + 2 < lines.length; i += 3) {
       const l1 = lines[i + 1], l2 = lines[i + 2];
       if (!l1 || !l2 || l1[0] !== '1') break;
       out.push(satellite.twoline2satrec(l1.trim(), l2.trim()));
-      if (out.length >= 8000) break;                          // hard cap for memory/perf
+      if (out.length >= 11000) break;                         // hard cap for memory/perf
     }
     if (out.length) { starlinkCatalog = out; Orrery._starReady = false; }
   } catch (err) { console.warn('Starlink catalog unavailable', err); }
@@ -1911,7 +1913,7 @@ const Orrery = {
   // across frames (a slice per frame) so even ~8k satrecs never hitch a frame.
   addStarlinkLayer() {
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(8000 * 3), 3));
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(11000 * 3), 3));
     geo.setDrawRange(0, 0);
     this.starlinkPoints = new THREE.Points(geo, new THREE.PointsMaterial({
       size: 1.7, map: starSprite, color: 0x8fe6d2, transparent: true, opacity: 0.7,
