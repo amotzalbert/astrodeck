@@ -4753,7 +4753,7 @@ window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
 // timeline so a clean take is one keypress. Trigger: ?tour=1 (auto, 3-2-1
 // countdown) or press T. Esc aborts · R restarts. Capture at 1920×1080 @60fps.
 const Tour = (() => {
-  const TOTAL = 90000, O = Orrery;
+  const TOTAL = 74000, O = Orrery;
   const v = (x, y, z) => new THREE.Vector3(x, y, z);
   const at = name => () => O.meshes[name].position;          // live planet position
   const ORI = () => ORIGIN;
@@ -4769,25 +4769,26 @@ const Tour = (() => {
 
   // Camera keyframes — camera world position = tgt() + off
   const CAM = [
-    { t: 0,     tgt: ORI,           off: v(0, 2.4, 7) },     // Sun, pushed in
-    { t: 8000,  tgt: ORI,           off: v(0, 30, 58) },     // establish full system
-    { t: 19000, tgt: ORI,           off: v(0, 30, 58) },     // hold a beat
-    { t: 23000, tgt: at('jupiter'), off: v(2.4, 2.8, 8.6) }, // glide to Jupiter + Galileans
-    { t: 27000, tgt: at('jupiter'), off: v(2.4, 2.8, 8.6) }, // hold Jupiter
-    { t: 31000, tgt: at('saturn'),  off: v(0, 3.4, 7) },     // Saturn + rings
-    { t: 36000, tgt: at('earth'),   off: sunlitOff('earth', 3.8, 1.2) },  // dive to Earth / ISS (lit side)
-    { t: 42000, tgt: at('earth'),   off: sunlitOff('earth', 6.8, 2.6) },  // widen for Starlink swarm
-    { t: 50000, tgt: ORI,           off: v(0, 54, 92) },     // pull out to Kuiper Belt
-    { t: 56000, tgt: ORI,           off: v(0, 34, 112) },    // wide, Milky Way arcs
-    { t: 60000, tgt: ORI,           off: v(0, 26, 78) },     // settle for the morph
-    { t: 71000, tgt: ORI,           off: v(0, 40, 104) },    // slow pull as it collapses
-    { t: 84000, tgt: ORI,           off: v(0, 30, 62) },     // back for closing glamour
-    { t: 90000, tgt: ORI,           off: v(0, 30, 62) },
+    { t: 0,     tgt: ORI,           off: v(0, 2.2, 6) },     // Sun, pushed in
+    { t: 4000,  tgt: ORI,           off: v(0, 28, 56) },     // establish full system
+    { t: 9000,  tgt: at('jupiter'), off: v(2.2, 2.6, 8) },   // Jupiter + Galilean moons
+    { t: 15000, tgt: at('saturn'),  off: v(0, 3.2, 7) },     // Saturn + rings
+    { t: 20000, tgt: at('earth'),   off: sunlitOff('earth', 3.6, 1.2) },  // dive to Earth / ISS (lit side)
+    { t: 24000, tgt: at('earth'),   off: sunlitOff('earth', 6.4, 2.4) },  // widen for Starlink swarm
+    { t: 29000, tgt: at('earth'),   off: sunlitOff('earth', 4.6, 1.4) },  // magnetic field — arrive
+    { t: 34000, tgt: at('earth'),   off: sunlitOff('earth', 5.6, 2.0) },  // mag — slow drift (hold)
+    { t: 38000, tgt: ORI,           off: v(0, 33, 62) },     // gravity wells — high angle over the sheet
+    { t: 43000, tgt: ORI,           off: v(0, 31, 74) },     // gravity — slow drift (hold)
+    { t: 48000, tgt: ORI,           off: v(0, 50, 90) },     // Kuiper Belt wide
+    { t: 52000, tgt: ORI,           off: v(0, 24, 70) },     // settle for the morph
+    { t: 57000, tgt: ORI,           off: v(0, 34, 92) },     // slow pull as it collapses
+    { t: 67000, tgt: ORI,           off: v(0, 28, 60) },     // back for closing glamour
+    { t: 74000, tgt: ORI,           off: v(0, 28, 60) },
   ];
 
-  // Sky-segment view pan (72000..84000)
+  // Sky-segment view pan (57000..67000)
   const skyPan = t => {
-    const u = smooth((t - 72000) / 12000);
+    const u = smooth((t - 57000) / 10000);
     Sky._resetTarget = null; Sky.followBody = null; Sky.gyroActive = false;
     Sky.viewAlt = (38 - 6 * u) * DEG;
     Sky.viewAz = (-55 + 130 * u) * DEG;
@@ -4812,48 +4813,58 @@ const Tour = (() => {
         loadStarlinkCatalog(); O._starReady = false;
         loadSatGroup('nav'); loadSatGroup('geo'); loadSatGroup('debris');
       } },
-    { t: 24000, fn() { O.setFocus('jupiter'); } },           // Galilean moon labels
-    { t: 30000, fn() { O.setFocus('saturn'); } },
-    { t: 36000, fn() { O.setFocus('earth'); O.showISS = true; } },
-    { t: 40000, fn() { O.showStarlink = true; loadStarlinkCatalog(); O._starReady = false; O._applyStarlinkVis(); } },
-    { t: 43000, fn() { for (const id of ['nav', 'geo', 'debris']) { O.satLayers[id].on = true; loadSatGroup(id); } O._applySatGroupVis(); } },
-    { t: 50000, fn() {                                        // declutter Earth shells, reveal Kuiper
+    { t: 9000,  fn() { O.setFocus('jupiter'); } },           // Galilean moon labels
+    { t: 15000, fn() { O.setFocus('saturn'); } },
+    { t: 20000, fn() { O.setFocus('earth'); O.showISS = true; } },
+    { t: 23000, fn() {                                       // satellites: Starlink swarm + category shells
+        O.showStarlink = true; loadStarlinkCatalog(); O._starReady = false; O._applyStarlinkVis();
+        for (const id of ['nav', 'geo', 'debris']) { O.satLayers[id].on = true; loadSatGroup(id); } O._applySatGroupVis();
+      } },
+    { t: 29000, fn() {                                       // MAGNETIC FIELDS — declutter sats, show Earth's dipole
         O.showStarlink = false; O._applyStarlinkVis();
         for (const id in O.satLayers) O.satLayers[id].on = false; O._applySatGroupVis();
-        O.showISS = false; O.setFocus(null);
+        O.showISS = false;
+        O.showMag = true; for (const g of O.magFields) g.visible = true;
+      } },
+    { t: 37000, fn() {                                       // GRAVITY WELLS — pull back, spacetime sheet
+        O.showMag = false; for (const g of O.magFields) g.visible = false;
+        O.setFocus(null);
+        O.showGrav = true; O.gravGrid.visible = true; for (const p of O.gravPatches) p.visible = true; O._gravT = null;
+      } },
+    { t: 45000, fn() {                                       // KUIPER BELT
+        O.showGrav = false; O.gravGrid.visible = false; for (const p of O.gravPatches) p.visible = false;
         O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;
       } },
-    { t: 56000, fn() { O.setMWBrightness(1.7); } },          // light up the galaxy
-    { t: 60000, fn() {                                        // THE WOW — true scale, cleared to empty space
+    { t: 51000, fn() {                                       // THE WOW — true scale, cleared to empty space
         O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;
         O.showKuiper = false; if (O.kuiperPoints) O.kuiperPoints.visible = false;
-        O.setMWBrightness(0.5);                               // dim backdrop so the void reads
-        O.trueTarget = 1;
+        O.setMWBrightness(0.5); O.trueTarget = 1;
       } },
-    { t: 72000, fn() {                                        // to Sky View (pinned to night for a dark sky)
+    { t: 57000, fn() {                                       // SKY VIEW (pinned to night for a dark sky)
         if (!renderMode) { const n = new Date(); n.setHours(21, 30, 0, 0); Sim.ms = n.getTime(); Sim.speedIdx = 4; refreshSpeedUI(); }
         goView('sky');
         Sky.showMW = true; if (Sky.mwGroup) Sky.mwGroup.visible = true;
         Sky.showConst = true; if (Sky.lineGroup) Sky.lineGroup.visible = true;
       } },
-    { t: 84000, fn() {                                        // back to orrery for a clean closing glamour shot
+    { t: 67000, fn() {                                       // CLOSE — clean glamour for the end card
         if (!renderMode) { const n = new Date(); Sim.ms = n.getTime(); Sim.speedIdx = 5; refreshSpeedUI(); }
-        goView('orrery');
-        O.trueTarget = 0;
-        O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;   // clean for the end card
-        O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;              // belt back for glamour
+        goView('orrery'); O.trueTarget = 0;
+        O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;
+        O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;
         O.setMWBrightness(1.1);
       } },
   ];
 
   const CAPS = [
-    { t: 600,   dur: 5600, kind: 'title', mk: 'ASTRODECK', sb: 'Night Sky Station' },
-    { t: 24000, dur: 5000, kind: 'cap', x: 'Real orbital data' },
-    { t: 37000, dur: 6000, kind: 'cap', x: 'Live satellites' },
-    { t: 50500, dur: 5000, kind: 'cap', x: 'Beyond Neptune' },
-    { t: 61000, dur: 7000, kind: 'cap', x: 'True scale' },
-    { t: 73000, dur: 6000, kind: 'cap', x: 'Your sky, tonight' },
-    { t: 84500, dur: 5500, kind: 'end', mk: 'ASTRODECK', sb: 'amotzalbert.github.io/astrodeck' },
+    { t: 400,   dur: 3800, kind: 'title', mk: 'ASTRODECK', sb: 'Night Sky Station' },
+    { t: 9000,  dur: 5500, kind: 'cap', x: 'Real orbital data' },
+    { t: 23500, dur: 5000, kind: 'cap', x: 'Live satellites' },
+    { t: 29000, dur: 5500, kind: 'cap', x: 'Magnetic fields' },
+    { t: 37000, dur: 6000, kind: 'cap', x: 'Gravity wells' },
+    { t: 45000, dur: 5000, kind: 'cap', x: 'The Kuiper Belt' },
+    { t: 51500, dur: 6500, kind: 'cap', x: 'True scale' },
+    { t: 58500, dur: 7000, kind: 'cap', x: 'Your sky, tonight' },
+    { t: 67500, dur: 5500, kind: 'end', mk: 'ASTRODECK', sb: 'amotzalbert.github.io/astrodeck' },
   ];
 
   let running = false, t0 = 0, started = false, firedEv = 0, ovl, titleEl, capEl, countEl;
@@ -4945,13 +4956,13 @@ const Tour = (() => {
   /* ---- Deterministic offline render (driven frame-by-frame by Playwright) ---- */
   const TOTAL_MS = TOTAL;
   const simAt = t =>
-    t < 72000 ? simStart0 + t * 600 :                         // orrery: ~10 min/s
-    t < 84000 ? nightMs0 + (t - 72000) * 60 :                 // sky: night, ~1 min/s
+    t < 57000 ? simStart0 + t * 600 :                         // orrery: ~10 min/s
+    t < 67000 ? nightMs0 + (t - 57000) * 60 :                 // sky: night, ~1 min/s
                 simStart0 + t * 600;                          // close
   const morphAt = t =>
-    t < 60000 ? 0 :
-    t < 84000 ? Math.min(1, (t - 60000) / 1000) :            // collapse over ~1s
-                Math.max(0, 1 - (t - 84000) / 1000);          // and un-collapse for the close
+    t < 51000 ? 0 :
+    t < 67000 ? Math.min(1, (t - 51000) / 1000) :            // collapse over ~1s
+                Math.max(0, 1 - (t - 67000) / 1000);          // and un-collapse for the close
 
   function startRender() {                                    // call once, then await renderReady()
     build();
