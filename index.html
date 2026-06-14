@@ -1614,6 +1614,7 @@ const ORRERY_SCALE = 11;
 // True-scale morph: 0 = compressed display scale, 1 = honest linear scale
 // (1 AU = 1.7 units puts Neptune right where the compressed view had it).
 let SCALE_MORPH = 0;
+function setScaleMorph(x) { SCALE_MORPH = x; }                // deterministic override for offline render
 const TRUE_AU_UNITS = 1.7;
 const TRUE_RADII = {                                          // km
   mercury: 2440, venus: 6052, earth: 6371, mars: 3390,
@@ -3106,7 +3107,7 @@ const Orrery = {
   update() {
     const d = Sim.d;
     const tgt = this.trueTarget;
-    if (SCALE_MORPH !== tgt) {                               // ease toward true/display scale
+    if (!this.renderMode && SCALE_MORPH !== tgt) {           // ease toward true/display scale (render mode sets it directly)
       SCALE_MORPH += Math.sign(tgt - SCALE_MORPH) * Math.min(Math.abs(tgt - SCALE_MORPH), 0.02);
       if (Math.abs(tgt - SCALE_MORPH) < 0.001) SCALE_MORPH = tgt;
       this._applyScaleMorph();
@@ -4763,6 +4764,7 @@ const Tour = (() => {
     return new THREE.Vector3(-p.x * inv, up, -p.z * inv);
   };
   const resolveOff = o => (typeof o === 'function' ? o() : o);
+  const goView = name => { if (activeView !== name) document.querySelector(`#tabs button[data-view="${name}"]`).click(); };
   const smooth = u => u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
 
   // Camera keyframes — camera world position = tgt() + off
@@ -4829,14 +4831,14 @@ const Tour = (() => {
         O.trueTarget = 1;
       } },
     { t: 72000, fn() {                                        // to Sky View (pinned to night for a dark sky)
-        const n = new Date(); n.setHours(21, 30, 0, 0); Sim.ms = n.getTime(); Sim.speedIdx = 4; refreshSpeedUI();
-        document.querySelector('#tabs button[data-view="sky"]').click();
+        if (!renderMode) { const n = new Date(); n.setHours(21, 30, 0, 0); Sim.ms = n.getTime(); Sim.speedIdx = 4; refreshSpeedUI(); }
+        goView('sky');
         Sky.showMW = true; if (Sky.mwGroup) Sky.mwGroup.visible = true;
         Sky.showConst = true; if (Sky.lineGroup) Sky.lineGroup.visible = true;
       } },
     { t: 84000, fn() {                                        // back to orrery for a clean closing glamour shot
-        const n = new Date(); Sim.ms = n.getTime(); Sim.speedIdx = 5; refreshSpeedUI();
-        document.querySelector('#tabs button[data-view="orrery"]').click();
+        if (!renderMode) { const n = new Date(); Sim.ms = n.getTime(); Sim.speedIdx = 5; refreshSpeedUI(); }
+        goView('orrery');
         O.trueTarget = 0;
         O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;   // clean for the end card
         O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;              // belt back for glamour
@@ -4855,6 +4857,7 @@ const Tour = (() => {
   ];
 
   let running = false, t0 = 0, started = false, firedEv = 0, ovl, titleEl, capEl, countEl;
+  let renderMode = false, simStart0 = 0, nightMs0 = 0;        // offline-render clock state
 
   function build() {
     if (ovl) return;
@@ -4890,7 +4893,7 @@ const Tour = (() => {
 
   function prime() {                                          // set opening state + hold frame 0
     build();
-    document.querySelector('#tabs button[data-view="orrery"]').click();
+    goView('orrery');
     O.tourActive = true; O.controls.enabled = false;
     document.body.classList.add('tour-active'); ovl.classList.add('show');
     O.resize(); Sky.resize();                                // canvas now fills the frame (no header gap)
@@ -4939,18 +4942,59 @@ const Tour = (() => {
     if (activeView === 'orrery') applyCam(ms); else skyPan(ms);
   }
 
+  /* ---- Deterministic offline render (driven frame-by-frame by Playwright) ---- */
+  const TOTAL_MS = TOTAL;
+  const simAt = t =>
+    t < 72000 ? simStart0 + t * 600 :                         // orrery: ~10 min/s
+    t < 84000 ? nightMs0 + (t - 72000) * 60 :                 // sky: night, ~1 min/s
+                simStart0 + t * 600;                          // close
+  const morphAt = t =>
+    t < 60000 ? 0 :
+    t < 84000 ? Math.min(1, (t - 60000) / 1000) :            // collapse over ~1s
+                Math.max(0, 1 - (t - 84000) / 1000);          // and un-collapse for the close
+
+  function startRender() {                                    // call once, then await renderReady()
+    build();
+    goView('orrery');
+    renderMode = true; running = false;
+    O.renderMode = true; O.tourActive = true; O.controls.enabled = false;
+    document.body.classList.add('tour-active'); ovl.classList.add('show');
+    O.resize(); Sky.resize();                                // canvas fills the frame
+    simStart0 = Date.now();
+    const n = new Date(); n.setHours(21, 30, 0, 0); nightMs0 = n.getTime();
+    EVENTS[0].fn();                                           // base state + kick off all TLE loads
+  }
+
+  function renderReady() {                                    // true once every TLE catalog is in
+    return !!starlinkCatalog && ['nav', 'geo', 'debris'].every(id => O.satLayers[id].catalog && O.satLayers[id].catalog.length);
+  }
+
+  function renderTick(t) {                                    // set full deterministic state for time t, render 1 frame
+    for (let i = 1; i < EVENTS.length; i++) if (EVENTS[i].t <= t) { try { EVENTS[i].fn(); } catch (e) {} }
+    Sim.ms = simAt(t);                                        // override any event time-pin
+    setScaleMorph(morphAt(t)); O._applyScaleMorph();
+    showCaps(t);
+    if (activeView === 'orrery') applyCam(t); else skyPan(t);
+    O._starReady = false;                                     // force a FULL satellite repopulate this frame
+    for (const id in O.satLayers) O.satLayers[id].ready = false;
+    if (activeView === 'orrery') O.update(); else Sky.update();
+  }
+
   window.addEventListener('keydown', e => {
     if ((e.key === 't' || e.key === 'T') && !running) countdownStart();
     else if (e.key === 'Escape' && running) stop();
     else if ((e.key === 'r' || e.key === 'R') && running) { stop(); countdownStart(); }
   });
 
-  return { tick, begin, stop, countdownStart, preview, get running() { return running; } };
+  return { tick, begin, stop, countdownStart, preview,
+    startRender, renderReady, renderTick, get total() { return TOTAL_MS; },
+    get running() { return running; }, get rendering() { return renderMode; } };
 })();
 
 window.__astro = { Orrery, Sky, Sim, Tour, predictISSPasses, Missions, get Loc() { return Loc; } };   // console/debug access
 
 function loop(now) {
+  if (Tour.rendering) { requestAnimationFrame(loop); return; }   // offline render drives frames itself
   Sim.tick();
   Tour.tick(now || performance.now());
   Missions.update();
