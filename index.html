@@ -728,6 +728,62 @@
     .compass { bottom: 160px; left: 10px; width: 78px; height: 78px; }
     .compass text { font-size: 13px; }
   }
+
+  /* ---------- Cinematic Tour ---------- */
+  body.tour-active { cursor: none; }
+  body.tour-active header, body.tour-active .toggle-stack, body.tour-active .ctrl-bar,
+  body.tour-active .time-restore, body.tour-active #help-btn, body.tour-active .hint,
+  body.tour-active .compass, body.tour-active .stack-fab, body.tour-active .sheet-backdrop,
+  body.tour-active .info-card, body.tour-active #true-scale-banner {
+    opacity: 0 !important; pointer-events: none !important;
+  }
+  body.tour-active main { inset: 0 !important; }     /* canvas fills the frame, no header gap */
+  #tour-overlay {
+    position: fixed; inset: 0; z-index: 90; pointer-events: none;
+    opacity: 0; transition: opacity .6s ease;
+    font-family: var(--font);
+  }
+  #tour-overlay.show { opacity: 1; }
+  /* cinematic letterbox + vignette */
+  #tour-overlay .bar { position: absolute; left: 0; right: 0; height: 7%; background: #000; }
+  #tour-overlay .bar.top { top: 0; } #tour-overlay .bar.bottom { bottom: 0; }
+  #tour-overlay .vig {
+    position: absolute; inset: 0;
+    box-shadow: inset 0 0 240px 60px rgba(0,0,0,0.55);
+  }
+  #tour-title {
+    position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%);
+    text-align: center; opacity: 0; transition: opacity 1s ease;
+  }
+  #tour-title.show { opacity: 1; }
+  #tour-title .mk {
+    font-size: clamp(34px, 7vw, 92px); font-weight: 700; letter-spacing: 10px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2), var(--violet));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  #tour-title .sb {
+    margin-top: 14px; font-family: var(--mono); font-size: clamp(10px,1.6vw,16px);
+    letter-spacing: 7px; text-transform: uppercase; color: var(--text-dim);
+  }
+  #tour-cap {
+    position: absolute; left: 0; right: 0; bottom: 12%; text-align: center;
+    opacity: 0; transform: translateY(8px); transition: opacity .55s ease, transform .55s ease;
+  }
+  #tour-cap.show { opacity: 1; transform: translateY(0); }
+  #tour-cap .t {
+    display: inline-block; padding: 9px 22px; border-radius: 999px;
+    background: rgba(8,12,24,0.5); backdrop-filter: blur(8px);
+    border: 1px solid rgba(94,234,212,0.25);
+    font-size: clamp(13px,1.9vw,20px); font-weight: 600; letter-spacing: 3px;
+    text-transform: uppercase; color: var(--text);
+  }
+  #tour-count {
+    position: absolute; inset: 0; display: grid; place-items: center;
+    font-family: var(--mono); font-size: clamp(60px,14vw,180px); font-weight: 700;
+    color: var(--accent); opacity: 0; transition: opacity .2s ease;
+    text-shadow: 0 0 40px rgba(94,234,212,0.5);
+  }
+  #tour-count.show { opacity: 0.92; }
 </style>
 </head>
 <body>
@@ -3090,12 +3146,15 @@ const Orrery = {
       moonMesh.position.set(Math.cos(ang) * 1.15, m.z / m.r * 0.3, -Math.sin(ang) * 1.15);
     }
     // Glide toward the focused body and travel with it as it orbits
-    this._focusPos(_tmpV2);
-    const move = _tmpV.copy(_tmpV2).sub(this.controls.target).multiplyScalar(0.1);
-    this.controls.target.add(move);
-    this.camera.position.add(move);
+    // (suspended while the Cinematic Tour drives the camera directly)
+    if (!this.tourActive) {
+      this._focusPos(_tmpV2);
+      const move = _tmpV.copy(_tmpV2).sub(this.controls.target).multiplyScalar(0.1);
+      this.controls.target.add(move);
+      this.camera.position.add(move);
+    }
 
-    this.controls.update();
+    if (!this.tourActive) this.controls.update();            // tour orients the camera itself
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
   },
@@ -4688,10 +4747,212 @@ refreshSpeedUI();
 }
 window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
 
-window.__astro = { Orrery, Sky, Sim, predictISSPasses, Missions, get Loc() { return Loc; } };   // console/debug access
+/* ===================== Cinematic Tour ===================== */
+// Scripted 90s flythrough for screen-capture. Drives camera + layers on a fixed
+// timeline so a clean take is one keypress. Trigger: ?tour=1 (auto, 3-2-1
+// countdown) or press T. Esc aborts · R restarts. Capture at 1920×1080 @60fps.
+const Tour = (() => {
+  const TOTAL = 90000, O = Orrery;
+  const v = (x, y, z) => new THREE.Vector3(x, y, z);
+  const at = name => () => O.meshes[name].position;          // live planet position
+  const ORI = () => ORIGIN;
+  // Camera offset that sits on a body's *sunlit* side (toward the Sun) so the lit
+  // hemisphere faces us regardless of where the planet is in its orbit.
+  const sunlitOff = (name, dist, up) => () => {
+    const p = O.meshes[name].position, inv = dist / (Math.hypot(p.x, p.z) || 1);
+    return new THREE.Vector3(-p.x * inv, up, -p.z * inv);
+  };
+  const resolveOff = o => (typeof o === 'function' ? o() : o);
+  const smooth = u => u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
+
+  // Camera keyframes — camera world position = tgt() + off
+  const CAM = [
+    { t: 0,     tgt: ORI,           off: v(0, 2.4, 7) },     // Sun, pushed in
+    { t: 8000,  tgt: ORI,           off: v(0, 30, 58) },     // establish full system
+    { t: 19000, tgt: ORI,           off: v(0, 30, 58) },     // hold a beat
+    { t: 23000, tgt: at('jupiter'), off: v(2.4, 2.8, 8.6) }, // glide to Jupiter + Galileans
+    { t: 27000, tgt: at('jupiter'), off: v(2.4, 2.8, 8.6) }, // hold Jupiter
+    { t: 31000, tgt: at('saturn'),  off: v(0, 3.4, 7) },     // Saturn + rings
+    { t: 36000, tgt: at('earth'),   off: sunlitOff('earth', 3.8, 1.2) },  // dive to Earth / ISS (lit side)
+    { t: 42000, tgt: at('earth'),   off: sunlitOff('earth', 6.8, 2.6) },  // widen for Starlink swarm
+    { t: 50000, tgt: ORI,           off: v(0, 54, 92) },     // pull out to Kuiper Belt
+    { t: 56000, tgt: ORI,           off: v(0, 34, 112) },    // wide, Milky Way arcs
+    { t: 60000, tgt: ORI,           off: v(0, 26, 78) },     // settle for the morph
+    { t: 71000, tgt: ORI,           off: v(0, 40, 104) },    // slow pull as it collapses
+    { t: 84000, tgt: ORI,           off: v(0, 30, 62) },     // back for closing glamour
+    { t: 90000, tgt: ORI,           off: v(0, 30, 62) },
+  ];
+
+  // Sky-segment view pan (72000..84000)
+  const skyPan = t => {
+    const u = smooth((t - 72000) / 12000);
+    Sky._resetTarget = null; Sky.followBody = null; Sky.gyroActive = false;
+    Sky.viewAlt = (38 - 6 * u) * DEG;
+    Sky.viewAz = (-55 + 130 * u) * DEG;
+  };
+
+  function base() {
+    O.showOrbits = true; O.scene.traverse(o => { if (o.userData.isOrbit) o.visible = true; });
+    O.showLabels = true; document.getElementById('orrery-labels').style.opacity = 1;
+    O.showMoons = true; for (const m of Object.values(O.moonMeshes)) m.visible = true; O.saturnRing.visible = true;
+    O.showISS = false;
+    O.showStarlink = false; O._applyStarlinkVis();
+    for (const id in O.satLayers) O.satLayers[id].on = false; O._applySatGroupVis();
+    O.showKuiper = false; if (O.kuiperPoints) O.kuiperPoints.visible = false;
+    O.showGrav = false; O.gravGrid.visible = false; for (const p of O.gravPatches) p.visible = false;
+    O.showMW = true; O.mwGroup.visible = true; O.setMWBrightness(0.7);
+    O.trueTarget = 0; O.setFocus(null);
+  }
+
+  const EVENTS = [
+    { t: 0, fn() {                                            // base + warm async layers
+        base();
+        loadStarlinkCatalog(); O._starReady = false;
+        loadSatGroup('nav'); loadSatGroup('geo'); loadSatGroup('debris');
+      } },
+    { t: 24000, fn() { O.setFocus('jupiter'); } },           // Galilean moon labels
+    { t: 30000, fn() { O.setFocus('saturn'); } },
+    { t: 36000, fn() { O.setFocus('earth'); O.showISS = true; } },
+    { t: 40000, fn() { O.showStarlink = true; loadStarlinkCatalog(); O._starReady = false; O._applyStarlinkVis(); } },
+    { t: 43000, fn() { for (const id of ['nav', 'geo', 'debris']) { O.satLayers[id].on = true; loadSatGroup(id); } O._applySatGroupVis(); } },
+    { t: 50000, fn() {                                        // declutter Earth shells, reveal Kuiper
+        O.showStarlink = false; O._applyStarlinkVis();
+        for (const id in O.satLayers) O.satLayers[id].on = false; O._applySatGroupVis();
+        O.showISS = false; O.setFocus(null);
+        O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;
+      } },
+    { t: 56000, fn() { O.setMWBrightness(1.7); } },          // light up the galaxy
+    { t: 60000, fn() {                                        // THE WOW — true scale, cleared to empty space
+        O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;
+        O.showKuiper = false; if (O.kuiperPoints) O.kuiperPoints.visible = false;
+        O.setMWBrightness(0.5);                               // dim backdrop so the void reads
+        O.trueTarget = 1;
+      } },
+    { t: 72000, fn() {                                        // to Sky View (pinned to night for a dark sky)
+        const n = new Date(); n.setHours(21, 30, 0, 0); Sim.ms = n.getTime(); Sim.speedIdx = 4; refreshSpeedUI();
+        document.querySelector('#tabs button[data-view="sky"]').click();
+        Sky.showMW = true; if (Sky.mwGroup) Sky.mwGroup.visible = true;
+        Sky.showConst = true; if (Sky.lineGroup) Sky.lineGroup.visible = true;
+      } },
+    { t: 84000, fn() {                                        // back to orrery for a clean closing glamour shot
+        const n = new Date(); Sim.ms = n.getTime(); Sim.speedIdx = 5; refreshSpeedUI();
+        document.querySelector('#tabs button[data-view="orrery"]').click();
+        O.trueTarget = 0;
+        O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;   // clean for the end card
+        O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;              // belt back for glamour
+        O.setMWBrightness(1.1);
+      } },
+  ];
+
+  const CAPS = [
+    { t: 600,   dur: 5600, kind: 'title', mk: 'ASTRODECK', sb: 'Night Sky Station' },
+    { t: 24000, dur: 5000, kind: 'cap', x: 'Real orbital data' },
+    { t: 37000, dur: 6000, kind: 'cap', x: 'Live satellites' },
+    { t: 50500, dur: 5000, kind: 'cap', x: 'Beyond Neptune' },
+    { t: 61000, dur: 7000, kind: 'cap', x: 'True scale' },
+    { t: 73000, dur: 6000, kind: 'cap', x: 'Your sky, tonight' },
+    { t: 84500, dur: 5500, kind: 'end', mk: 'ASTRODECK', sb: 'amotzalbert.github.io/astrodeck' },
+  ];
+
+  let running = false, t0 = 0, started = false, firedEv = 0, ovl, titleEl, capEl, countEl;
+
+  function build() {
+    if (ovl) return;
+    ovl = document.createElement('div'); ovl.id = 'tour-overlay';
+    ovl.innerHTML = '<div class="bar top"></div><div class="bar bottom"></div><div class="vig"></div>'
+      + '<div id="tour-title"><div class="mk"></div><div class="sb"></div></div>'
+      + '<div id="tour-cap"><span class="t"></span></div><div id="tour-count"></div>';
+    document.body.appendChild(ovl);
+    titleEl = ovl.querySelector('#tour-title'); capEl = ovl.querySelector('#tour-cap'); countEl = ovl.querySelector('#tour-count');
+  }
+
+  function showCaps(t) {
+    let titleOn = null, capOn = null;
+    for (const c of CAPS) {
+      if (t >= c.t && t < c.t + c.dur) { if (c.kind === 'cap') capOn = c; else titleOn = c; }
+    }
+    if (titleOn) { titleEl.querySelector('.mk').textContent = titleOn.mk; titleEl.querySelector('.sb').textContent = titleOn.sb; titleEl.classList.add('show'); }
+    else titleEl.classList.remove('show');
+    if (capOn) { capEl.querySelector('.t').textContent = capOn.x; capEl.classList.add('show'); }
+    else capEl.classList.remove('show');
+  }
+
+  function applyCam(t) {
+    let i = 0; while (i < CAM.length - 1 && t >= CAM[i + 1].t) i++;
+    const a = CAM[i], b = CAM[Math.min(i + 1, CAM.length - 1)];
+    const e = smooth((t - a.t) / Math.max(1, b.t - a.t));
+    const ta = a.tgt(), tb = b.tgt(), oa = resolveOff(a.off), ob = resolveOff(b.off);
+    const tx = ta.x + (tb.x - ta.x) * e, ty = ta.y + (tb.y - ta.y) * e, tz = ta.z + (tb.z - ta.z) * e;
+    O.controls.target.set(tx, ty, tz);
+    O.camera.position.set(tx + oa.x + (ob.x - oa.x) * e, ty + oa.y + (ob.y - oa.y) * e, tz + oa.z + (ob.z - oa.z) * e);
+    O.camera.lookAt(O.controls.target);                      // orient manually — controls.update() is skipped in tour
+  }
+
+  function prime() {                                          // set opening state + hold frame 0
+    build();
+    document.querySelector('#tabs button[data-view="orrery"]').click();
+    O.tourActive = true; O.controls.enabled = false;
+    document.body.classList.add('tour-active'); ovl.classList.add('show');
+    O.resize(); Sky.resize();                                // canvas now fills the frame (no header gap)
+    Sim.ms = Date.now(); Sim.speedIdx = 5; Sim.paused = false; refreshSpeedUI();   // 10 min/s — sats glide
+    EVENTS[0].fn(); firedEv = 1; applyCam(0);
+  }
+
+  function tick(now) {
+    if (!running) return;
+    if (!started) { t0 = now; started = true; }
+    const t = now - t0;
+    while (firedEv < EVENTS.length && EVENTS[firedEv].t <= t) {
+      try { EVENTS[firedEv].fn(); } catch (e) { console.warn('tour event', e); }
+      firedEv++;
+    }
+    showCaps(t);
+    if (activeView === 'orrery') applyCam(t); else if (activeView === 'sky') skyPan(t);
+    if (t >= TOTAL) stop();
+  }
+
+  function begin() { prime(); started = false; running = true; }
+
+  function stop() {
+    running = false; O.tourActive = false; O.controls.enabled = true;
+    document.body.classList.remove('tour-active'); if (ovl) ovl.classList.remove('show');
+    O.resize(); Sky.resize();                                // restore to the windowed (header-offset) layout
+  }
+
+  async function countdownStart() {
+    if (running) return;
+    prime();
+    for (let n = 3; n >= 1; n--) {
+      countEl.textContent = n; countEl.classList.add('show');
+      await new Promise(r => setTimeout(r, 800)); countEl.classList.remove('show');
+      await new Promise(r => setTimeout(r, 160));
+    }
+    started = false; running = true;
+  }
+
+  // Debug: freeze the tour at a given timecode for still-frame review
+  function preview(ms) {
+    running = false;
+    prime();
+    for (let i = 1; i < EVENTS.length; i++) if (EVENTS[i].t <= ms) { try { EVENTS[i].fn(); } catch (e) {} }
+    showCaps(ms);
+    if (activeView === 'orrery') applyCam(ms); else skyPan(ms);
+  }
+
+  window.addEventListener('keydown', e => {
+    if ((e.key === 't' || e.key === 'T') && !running) countdownStart();
+    else if (e.key === 'Escape' && running) stop();
+    else if ((e.key === 'r' || e.key === 'R') && running) { stop(); countdownStart(); }
+  });
+
+  return { tick, begin, stop, countdownStart, preview, get running() { return running; } };
+})();
+
+window.__astro = { Orrery, Sky, Sim, Tour, predictISSPasses, Missions, get Loc() { return Loc; } };   // console/debug access
 
 function loop(now) {
   Sim.tick();
+  Tour.tick(now || performance.now());
   Missions.update();
   if (activeView === 'orrery') Orrery.update();
   else if (activeView === 'sky') Sky.update();
@@ -4701,7 +4962,10 @@ function loop(now) {
 requestAnimationFrame(loop);
 
 setTimeout(() => document.getElementById('loader').classList.add('done'), 700);
-if (!localStorage.getItem('astrodeck.location')) {
+const _tourParam = new URLSearchParams(location.search).get('tour');
+if (_tourParam) {
+  setTimeout(() => Tour.countdownStart(), 1400);              // auto-run for capture
+} else if (!localStorage.getItem('astrodeck.location')) {
   document.getElementById('loader-text').textContent = 'Set your observing location…';
   setTimeout(openLocModal, 1100);
 }
