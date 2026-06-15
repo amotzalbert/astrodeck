@@ -440,6 +440,36 @@
     backdrop-filter: blur(10px);
   }
   #help-btn:hover { border-color: rgba(94,234,212,0.5); color: var(--accent); box-shadow: 0 0 10px rgba(94,234,212,0.2); }
+  /* "Watch the tour" button + fullscreen video player */
+  #watch-btn {
+    position: fixed; top: 14px; right: 54px; z-index: 55;
+    appearance: none; cursor: pointer; height: 30px; padding: 0 13px;
+    display: flex; align-items: center; gap: 7px;
+    background: rgba(13,19,36,0.85); border: 1px solid var(--border-soft);
+    border-radius: 15px; color: var(--text-dim);
+    font-size: 12px; font-weight: 600; font-family: var(--mono); letter-spacing: .4px;
+    transition: all .15s; backdrop-filter: blur(10px); white-space: nowrap;
+  }
+  #watch-btn:hover { border-color: rgba(94,234,212,0.5); color: var(--accent); box-shadow: 0 0 10px rgba(94,234,212,0.2); }
+  #watch-btn .tri { font-size: 9px; color: var(--accent); }
+  #video-modal {
+    position: fixed; inset: 0; z-index: 120; display: none;
+    background: rgba(2,4,10,0.92); backdrop-filter: blur(6px);
+    align-items: center; justify-content: center;
+  }
+  #video-modal.open { display: flex; }
+  #video-modal video {
+    width: min(92vw, calc(92vh * 16 / 9)); max-height: 92vh;
+    border-radius: 10px; box-shadow: 0 20px 80px rgba(0,0,0,.7); background: #000;
+  }
+  #video-close {
+    position: absolute; top: 18px; right: 22px; z-index: 121; cursor: pointer;
+    width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--border-soft);
+    background: rgba(13,19,36,0.9); color: var(--text); font-size: 15px;
+    display: grid; place-items: center; backdrop-filter: blur(10px);
+  }
+  #video-close:hover { border-color: rgba(94,234,212,0.5); color: var(--accent); }
+  @media (max-width: 760px) { #watch-btn { top: 13px; right: 45px; height: 28px; padding: 0 10px; font-size: 11px; } }
   .help-modal {
     width: 560px; max-width: calc(100vw - 32px);
     max-height: calc(100vh - 60px);
@@ -732,11 +762,16 @@
   /* ---------- Cinematic Tour ---------- */
   body.tour-active { cursor: none; }
   body.tour-active header, body.tour-active .toggle-stack, body.tour-active .ctrl-bar,
-  body.tour-active .time-restore, body.tour-active #help-btn, body.tour-active .hint,
+  body.tour-active .time-restore, body.tour-active #help-btn, body.tour-active #watch-btn, body.tour-active .hint,
   body.tour-active .compass, body.tour-active .stack-fab, body.tour-active .sheet-backdrop,
-  body.tour-active .info-card, body.tour-active #true-scale-banner {
+  body.tour-active .info-card {
     opacity: 0 !important; pointer-events: none !important;
   }
+  /* True-scale HUD + revealed pills stay visible during the rap tour, dropped below
+     the cinematic bars and lifted above the letterbox overlay. */
+  body.tour-active #true-scale-banner { top: 9%; left: 3.2%; z-index: 95; }
+  body.tour-active #scale-lens { z-index: 95; }
+  body.tour-active .toggle-stack { top: 9%; right: 3.2%; z-index: 95; }
   body.tour-active main { inset: 0 !important; }     /* canvas fills the frame, no header gap */
   #tour-overlay {
     position: fixed; inset: 0; z-index: 90; pointer-events: none;
@@ -814,6 +849,11 @@
   </div>
 </header>
 <button id="help-btn" title="Help &amp; feature guide">?</button>
+<button id="watch-btn" title="Watch the AstroDeck tour video"><span class="tri">▶</span>Watch the tour</button>
+<div id="video-modal">
+  <button id="video-close" title="Close (Esc)">✕</button>
+  <video id="tour-video" src="astrodeck-tour.mp4" controls playsinline preload="none"></video>
+</div>
 
 <main>
   <!-- ============ ORRERY VIEW ============ -->
@@ -4753,7 +4793,9 @@ window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
 // timeline so a clean take is one keypress. Trigger: ?tour=1 (auto, 3-2-1
 // countdown) or press T. Esc aborts · R restarts. Capture at 1920×1080 @60fps.
 const Tour = (() => {
-  const TOTAL = 74000, O = Orrery;
+  const O = Orrery;
+  // Timeline values are variant-selectable (doc = calm documentary, rap = beat-synced cut).
+  let TOTAL = 74000, SKY_T0 = 57000, SKY_T1 = 67000, MORPH_T0 = 51000;
   const v = (x, y, z) => new THREE.Vector3(x, y, z);
   const at = name => () => O.meshes[name].position;          // live planet position
   const ORI = () => ORIGIN;
@@ -4767,8 +4809,32 @@ const Tour = (() => {
   const goView = name => { if (activeView !== name) document.querySelector(`#tabs button[data-view="${name}"]`).click(); };
   const smooth = u => u <= 0 ? 0 : u >= 1 ? 1 : u * u * (3 - 2 * u);
 
+  // Rap-cut camera moves — each returns an offset for shot-progress u in [0,1].
+  // fly = full 3D move: dolly (horizontal radius r), crane (height h), orbit (azimuth a, radians).
+  const fly = (r0, h0, a0, r1, h1, a1) => u => {
+    const r = r0 + (r1 - r0) * u, h = h0 + (h1 - h0) * u, a = a0 + (a1 - a0) * u;
+    return new THREE.Vector3(r * Math.sin(a), h, r * Math.cos(a));
+  };
+  // sunlitFly = dolly/crane on a body's sunlit side (lit hemisphere always faces camera).
+  const sunlitFly = (name, d0, h0, d1, h1) => u => {
+    const p = O.meshes[name].position, inv = 1 / (Math.hypot(p.x, p.z) || 1);
+    const d = d0 + (d1 - d0) * u, h = h0 + (h1 - h0) * u;
+    return new THREE.Vector3(-p.x * inv * d, h, -p.z * inv * d);
+  };
+  // Open the true-scale magnifier lens hovering over a body's on-screen position.
+  const lensAt = name => {
+    const m = (name === 'sun') ? O.sunMesh : O.meshes[name];
+    if (!m) return;
+    const sv = m.position.clone().project(O.camera);
+    const el = O.renderer.domElement, w = el.clientWidth || 1920, h = el.clientHeight || 1080;
+    O.openLens(name, (sv.x + 1) / 2 * w, (1 - sv.y) / 2 * h);
+  };
+  // Reveal / hide a UI pill stack during the tour (inline !important beats tour-active).
+  const pillShow = id => { const el = document.getElementById(id); if (el) el.style.setProperty('opacity', '0.92', 'important'); };
+  const pillHide = id => { const el = document.getElementById(id); if (el) el.style.setProperty('opacity', '0', 'important'); };
+
   // Camera keyframes — camera world position = tgt() + off
-  const CAM = [
+  const CAM_DOC = [
     { t: 0,     tgt: ORI,           off: v(0, 2.2, 6) },     // Sun, pushed in
     { t: 4000,  tgt: ORI,           off: v(0, 28, 56) },     // establish full system
     { t: 9000,  tgt: at('jupiter'), off: v(2.2, 2.6, 8) },   // Jupiter + Galilean moons
@@ -4786,12 +4852,17 @@ const Tour = (() => {
     { t: 74000, tgt: ORI,           off: v(0, 28, 60) },
   ];
 
-  // Sky-segment view pan (57000..67000)
+  // Sky-segment view pan (SKY_T0..SKY_T1)
   const skyPan = t => {
-    const u = smooth((t - 57000) / 10000);
+    const u = smooth((t - SKY_T0) / (SKY_T1 - SKY_T0));
     Sky._resetTarget = null; Sky.followBody = null; Sky.gyroActive = false;
-    Sky.viewAlt = (38 - 6 * u) * DEG;
-    Sky.viewAz = (-55 + 130 * u) * DEG;
+    if (SHOTS) {                                              // rap: wider, sweeping pan across the Milky Way
+      Sky.viewAlt = (44 - 30 * u) * DEG;
+      Sky.viewAz = (-62 + 152 * u) * DEG;
+    } else {
+      Sky.viewAlt = (38 - 6 * u) * DEG;
+      Sky.viewAz = (-55 + 130 * u) * DEG;
+    }
   };
 
   function base() {
@@ -4807,7 +4878,7 @@ const Tour = (() => {
     O.trueTarget = 0; O.setFocus(null);
   }
 
-  const EVENTS = [
+  const EVENTS_DOC = [
     { t: 0, fn() {                                            // base + warm async layers
         base();
         loadStarlinkCatalog(); O._starReady = false;
@@ -4855,7 +4926,7 @@ const Tour = (() => {
       } },
   ];
 
-  const CAPS = [
+  const CAPS_DOC = [
     { t: 400,   dur: 3800, kind: 'title', mk: 'ASTRODECK', sb: 'Night Sky Station' },
     { t: 9000,  dur: 5500, kind: 'cap', x: 'Real orbital data' },
     { t: 23500, dur: 5000, kind: 'cap', x: 'Live satellites' },
@@ -4866,6 +4937,167 @@ const Tour = (() => {
     { t: 58500, dur: 7000, kind: 'cap', x: 'Your sky, tonight' },
     { t: 67500, dur: 5500, kind: 'end', mk: 'ASTRODECK', sb: 'amotzalbert.github.io/astrodeck' },
   ];
+
+  /* ===== RAP CUT variant — section boundaries snapped to the rap's word timings =====
+     (from a word-level transcript of the final audio). Each feature's shots are
+     split evenly across the window where that feature is actually rapped, so the
+     visual lands on the lyric. Discrete shots = clean single-frame jump cuts; each
+     pair flips WIDE<->TIGHT / HIGH<->LOW so a body is never shown twice the same way.
+     Lyric anchors: solar-system 16.2s · Jupiter 28.0 · Saturn 38.2 · Earth 49.0 ·
+     satellites 59.0 · magnetic 69.9 · gravity 80.9 · Kuiper 91.6 · true-scale 102.0 ·
+     "look up" 122.8 · close/end-card 139.7. */
+  const SHOTS_RAP = (() => {
+    const shots = []; let t = 0;
+    const seg = (end, tgt, cams) => {                        // split [t, end] into equal shots
+      const n = cams.length, dur = (end - t) / n;
+      for (let i = 0; i < n; i++) {
+        const e = (i === n - 1) ? end : Math.round(t + dur);
+        shots.push({ t0: Math.round(t), t1: e, tgt, cam: cams[i] }); t = e;
+      }
+    };
+    const jumpTo = abs => { t = abs; };
+
+    // INTRO / SUN (0 -> 16.2s) — ONE continuous smooth reveal: start close on the Sun
+    // (title), then pull all the way back to the whole system, easing to a settle right
+    // where the SYSTEM shot begins (so the verse cut is seamless). No mid-intro cuts.
+    seg(16200, ORI, [
+      fly(9.8, 3.3, 0.42, 60, 44, -0.66),
+    ]);
+    // SYSTEM — real orbital data (16.2 -> 28.0s), 2 shots
+    seg(28000, ORI, [
+      fly(62, 46, -0.70, 56, 40, -0.30),                     // WIDE / HIGH: top-down sweep
+      fly(38, 8, 0.50, 44, 11, 1.00),                        // TIGHT / LOW: into the inner system
+    ]);
+    // JUPITER (28.0 -> 38.2s)
+    seg(38200, at('jupiter'), [
+      fly(10.8, 4.0, 0.75, 9.2, 3.0, 0.25),                  // WIDE / HIGH: giant + moons spread
+      fly(7.0, -1.0, -1.30, 7.4, 1.4, -2.00),                // TIGHT / LOW: close pass, opposite face
+    ]);
+    // SATURN (38.2 -> 49.0s)
+    seg(49000, at('saturn'), [
+      fly(10.2, 3.6, 0.50, 8.8, 2.6, 0.05),                  // WIDE / HIGH: full ring face from above
+      fly(6.8, 0.0, -0.80, 7.2, -0.8, 0.20),                 // TIGHT / LOW: edge-on ring slice
+    ]);
+    // EARTH + ISS (49.0 -> 59.0s)
+    seg(59000, at('earth'), [
+      sunlitFly('earth', 3.4, 0.6, 2.9, 0.2),                // TIGHT / LOW: dive on the sunlit side, ISS
+      sunlitFly('earth', 6.0, 3.6, 6.8, 2.6),                // WIDE / HIGH: craned right back
+    ]);
+    // SATELLITES — live satellites (59.0 -> 69.9s)
+    seg(69900, at('earth'), [
+      sunlitFly('earth', 4.4, 1.2, 6.2, 2.4),                // MEDIUM: reveal the Starlink swarm
+      sunlitFly('earth', 8.4, 4.8, 7.8, 4.0),                // WIDE / HIGH: top-down on the geo ring + shells
+      sunlitFly('earth', 5.0, -0.8, 4.4, 0.6),               // TIGHT / LOW: skim through the swarm
+    ]);
+    // MAGNETIC FIELD (69.9 -> 80.9s)
+    seg(80900, at('earth'), [
+      sunlitFly('earth', 6.4, 3.4, 5.6, 2.4),                // WIDE / HIGH: the whole dipole
+      sunlitFly('earth', 4.0, -1.0, 4.6, 0.8),               // TIGHT / LOW: in through the field loops
+    ]);
+    // GRAVITY WELLS (80.9 -> 91.6s)
+    seg(91600, ORI, [
+      fly(72, 48, -0.60, 66, 42, -0.10),                     // WIDE / HIGH: far over the spacetime sheet
+      fly(50, 10, 0.50, 44, 7, -0.20),                       // TIGHT / LOW: descend and skim the grid
+    ]);
+    // KUIPER BELT (91.6 -> 102.0s)
+    seg(102000, ORI, [
+      fly(98, 58, -0.55, 92, 50, -0.10),                     // ULTRA-WIDE / HIGH: the whole belt
+      fly(76, 30, 0.60, 82, 24, 1.15),                       // TIGHTER / LOW: along the ring, other way
+    ]);
+    // TRUE SCALE + BREAK (102.0 -> 122.8s) — long smooth orbiting pull into the void
+    seg(122800, ORI, [
+      fly(72, 24, 0.00, 100, 40, 0.40),                      // majestic collapse pull
+      fly(104, 42, 0.40, 118, 50, 0.95),                     // slow orbit of the empty void (the breath)
+    ]);
+    // SKY VIEW (122.8 -> 139.7s — camera driven by skyPan)
+    jumpTo(139700);
+    // CLOSE — ONE continuous constant-speed glamour orbit + pull-back over the whole
+    // outro into the end card (139.7s -> end of the full track, ~3:19). linear = no easing.
+    shots.push({ t0: 139700, t1: 199306, tgt: ORI, linear: true,
+      cam: fly(52, 18, -0.40, 104, 48, 2.55) });
+    return shots;
+  })();
+
+  const EVENTS_RAP = [
+    { t: 0, fn() {
+        base();
+        pillHide('orrery-toggles'); pillHide('sky-toggles');
+        loadStarlinkCatalog(); O._starReady = false;
+        loadSatGroup('nav'); loadSatGroup('geo'); loadSatGroup('debris');
+      } },
+    { t: 28000, fn() { O.setFocus('jupiter'); } },
+    { t: 38200, fn() { O.setFocus('saturn'); } },
+    { t: 49000, fn() { O.setFocus('earth'); O.showISS = true; } },
+    { t: 59000, fn() {
+        O.showStarlink = true; loadStarlinkCatalog(); O._starReady = false; O._applyStarlinkVis();
+        for (const id of ['nav', 'geo', 'debris']) { O.satLayers[id].on = true; loadSatGroup(id); } O._applySatGroupVis();
+        pillShow('orrery-toggles');                                  // reveal the layer pills while the sats are live
+      } },
+    { t: 69900, fn() {
+        O.showStarlink = false; O._applyStarlinkVis();
+        for (const id in O.satLayers) O.satLayers[id].on = false; O._applySatGroupVis();
+        O.showISS = false; pillHide('orrery-toggles');
+        O.showMag = true; for (const g of O.magFields) g.visible = true;
+      } },
+    { t: 80900, fn() {
+        O.showMag = false; for (const g of O.magFields) g.visible = false;
+        O.setFocus(null);
+        O.showGrav = true; O.gravGrid.visible = true; for (const p of O.gravPatches) p.visible = true; O._gravT = null;
+      } },
+    { t: 91600, fn() {
+        O.showGrav = false; O.gravGrid.visible = false; for (const p of O.gravPatches) p.visible = false;
+        O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;
+      } },
+    { t: 102000, fn() {
+        O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;
+        O.showKuiper = false; if (O.kuiperPoints) O.kuiperPoints.visible = false;
+        O.setMWBrightness(0.5); O.trueTarget = 1;
+      } },
+    { t: 106000, fn() { lensAt('jupiter'); } },                      // magnifier: Jupiter vs Earth for scale
+    { t: 111000, fn() { lensAt('sun'); } },                          // magnifier: the Sun, against Earth
+    { t: 116000, fn() { O.closeLens(); } },                          // back to the empty void for the breath
+    { t: 122800, fn() {
+        if (!renderMode) { const n = new Date(); n.setHours(21, 30, 0, 0); Sim.ms = n.getTime(); Sim.speedIdx = 4; refreshSpeedUI(); }
+        goView('sky');
+        Sky.showMW = true; if (Sky.mwGroup) Sky.mwGroup.visible = true;
+        Sky.showConst = true; if (Sky.lineGroup) Sky.lineGroup.visible = true;
+        O.closeLens(); pillHide('orrery-toggles'); pillShow('sky-toggles');   // reveal the sky layer pills
+      } },
+    { t: 139700, fn() {
+        if (!renderMode) { const n = new Date(); Sim.ms = n.getTime(); Sim.speedIdx = 5; refreshSpeedUI(); }
+        goView('orrery'); O.trueTarget = 0;
+        pillHide('sky-toggles');
+        O.showLabels = false; document.getElementById('orrery-labels').style.opacity = 0;
+        O.showKuiper = true; if (O.kuiperPoints) O.kuiperPoints.visible = true;
+        O.setMWBrightness(1.1);
+      } },
+  ];
+
+  const CAPS_RAP = [
+    { t: 200,    dur: 6500,  kind: 'title', mk: 'ASTRODECK', sb: 'Night Sky Station' },
+    { t: 16200,  dur: 11000, kind: 'cap', x: 'Real orbital data' },
+    { t: 59000,  dur: 10500, kind: 'cap', x: 'Live satellites' },
+    { t: 69900,  dur: 10500, kind: 'cap', x: 'Magnetic fields' },
+    { t: 80900,  dur: 10200, kind: 'cap', x: 'Gravity wells' },
+    { t: 91600,  dur: 10000, kind: 'cap', x: 'The Kuiper Belt' },
+    { t: 102000, dur: 18000, kind: 'cap', x: 'True scale' },
+    { t: 122800, dur: 15000, kind: 'cap', x: 'Your sky, tonight' },
+    { t: 139700, dur: 59606, kind: 'end', mk: 'ASTRODECK', sb: 'amotzalbert.github.io/astrodeck' },
+  ];
+
+  // Active timeline (selected by variant) — referenced by the rest of the module.
+  // SHOTS is non-null only for the rap variant (discrete shot-based camera w/ clean cuts).
+  let CAM = CAM_DOC, EVENTS = EVENTS_DOC, CAPS = CAPS_DOC, SHOTS = null;
+  function selectVariant(name) {
+    if (name === 'rap') {
+      CAM = CAM_DOC; EVENTS = EVENTS_RAP; CAPS = CAPS_RAP; SHOTS = SHOTS_RAP;
+      TOTAL = 199306; SKY_T0 = 122800; SKY_T1 = 139700; MORPH_T0 = 102000;
+    } else {
+      CAM = CAM_DOC; EVENTS = EVENTS_DOC; CAPS = CAPS_DOC; SHOTS = null;
+      TOTAL = 74000; SKY_T0 = 57000; SKY_T1 = 67000; MORPH_T0 = 51000;
+    }
+  }
+  selectVariant(new URLSearchParams(location.search).get('tour') === 'rap' ? 'rap' : 'doc');
 
   let running = false, t0 = 0, started = false, firedEv = 0, ovl, titleEl, capEl, countEl;
   let renderMode = false, simStart0 = 0, nightMs0 = 0;        // offline-render clock state
@@ -4892,6 +5124,17 @@ const Tour = (() => {
   }
 
   function applyCam(t) {
+    if (SHOTS) {                                              // rap: discrete shots, animated within, hard cut between
+      let s = SHOTS[0];
+      for (const sh of SHOTS) { if (t >= sh.t0) s = sh; else break; }   // last shot whose t0 has passed
+      const raw = Math.min(1, Math.max(0, (t - s.t0) / Math.max(1, s.t1 - s.t0)));
+      const u = s.linear ? raw : smooth(raw);                           // linear = constant speed (no ease)
+      const tg = s.tgt(), off = s.cam(u);
+      O.controls.target.copy(tg);
+      O.camera.position.set(tg.x + off.x, tg.y + off.y, tg.z + off.z);
+      O.camera.lookAt(O.controls.target);
+      return;
+    }
     let i = 0; while (i < CAM.length - 1 && t >= CAM[i + 1].t) i++;
     const a = CAM[i], b = CAM[Math.min(i + 1, CAM.length - 1)];
     const e = smooth((t - a.t) / Math.max(1, b.t - a.t));
@@ -4954,15 +5197,14 @@ const Tour = (() => {
   }
 
   /* ---- Deterministic offline render (driven frame-by-frame by Playwright) ---- */
-  const TOTAL_MS = TOTAL;
   const simAt = t =>
-    t < 57000 ? simStart0 + t * 600 :                         // orrery: ~10 min/s
-    t < 67000 ? nightMs0 + (t - 57000) * 60 :                 // sky: night, ~1 min/s
+    t < SKY_T0 ? simStart0 + t * 600 :                        // orrery: ~10 min/s
+    t < SKY_T1 ? nightMs0 + (t - SKY_T0) * 60 :               // sky: night, ~1 min/s
                 simStart0 + t * 600;                          // close
   const morphAt = t =>
-    t < 51000 ? 0 :
-    t < 67000 ? Math.min(1, (t - 51000) / 1000) :            // collapse over ~1s
-                Math.max(0, 1 - (t - 67000) / 1000);          // and un-collapse for the close
+    t < MORPH_T0 ? 0 :
+    t < SKY_T1 ? Math.min(1, (t - MORPH_T0) / 1000) :         // collapse over ~1s
+                Math.max(0, 1 - (t - SKY_T1) / 1000);         // and un-collapse for the close
 
   function startRender() {                                    // call once, then await renderReady()
     build();
@@ -4997,8 +5239,8 @@ const Tour = (() => {
     else if ((e.key === 'r' || e.key === 'R') && running) { stop(); countdownStart(); }
   });
 
-  return { tick, begin, stop, countdownStart, preview,
-    startRender, renderReady, renderTick, get total() { return TOTAL_MS; },
+  return { tick, begin, stop, countdownStart, preview, setVariant: selectVariant,
+    startRender, renderReady, renderTick, get total() { return TOTAL; },
     get running() { return running; }, get rendering() { return renderMode; } };
 })();
 
@@ -5024,6 +5266,22 @@ if (_tourParam) {
   document.getElementById('loader-text').textContent = 'Set your observing location…';
   setTimeout(openLocModal, 1100);
 }
+</script>
+<script>
+/* "Watch the tour" video player */
+(function () {
+  const btn = document.getElementById('watch-btn'),
+        modal = document.getElementById('video-modal'),
+        vid = document.getElementById('tour-video'),
+        closeBtn = document.getElementById('video-close');
+  if (!btn || !modal) return;
+  const open = () => { modal.classList.add('open'); try { vid.currentTime = 0; vid.play(); } catch (e) {} };
+  const shut = () => { try { vid.pause(); } catch (e) {} modal.classList.remove('open'); };
+  btn.addEventListener('click', open);
+  closeBtn.addEventListener('click', shut);
+  modal.addEventListener('click', e => { if (e.target === modal) shut(); });
+  window.addEventListener('keydown', e => { if (e.key === 'Escape' && modal.classList.contains('open')) shut(); });
+})();
 </script>
 </body>
 </html>
