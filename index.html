@@ -1274,7 +1274,7 @@ function saveLoc(l) {
   refreshLocChip();
   document.querySelector('.pass-banner')?.remove();
   document.querySelector('.tonight-pop')?.remove();          // re-evaluate for the new spot
-  _tonightShown = false;
+  _tonightShown = false; _tonightDismissed = false;
   if (typeof showTonightHeadsUp === 'function') showTonightHeadsUp();
 }
 function refreshLocChip() {
@@ -1438,7 +1438,7 @@ async function initISS() {
     issReady = true;
     Orrery.addISS();
     Sky.addISS();
-    showTonightHeadsUp();                                     // ISS now loaded → include passes
+    showTonightHeadsUp(true);                                 // ISS now loaded → (re)build with passes
   } catch (err) { console.warn('ISS data unavailable', err); }
 }
 // TEME position/velocity (km) at a date — null when TLE can't be trusted
@@ -1619,13 +1619,13 @@ function issSunlit(posEci, dateMs) {
 }
 
 // Naked-eye visible ISS passes in the next 24 h: ISS up + observer dark + ISS sunlit
-function predictISSPasses() {
+function predictISSPasses(hours = 24) {
   if (!issReady) return [];
   const passes = [];
   const obs = { latitude: Loc.lat * DEG, longitude: Loc.lon * DEG, height: 0.5 };
   const start = Date.now();
   let cur = null;
-  for (let t = start; t < start + 24 * 3600000; t += 30000) {
+  for (let t = start; t < start + hours * 3600000; t += 30000) {
     const pv = issState(new Date(t));
     if (!pv) continue;
     const gmst = satellite.gstime(new Date(t));
@@ -1709,26 +1709,36 @@ function tonightData() {
       if (best) bodies.push({ key, label, first, last, best });
     }
   }
-  const passes = (typeof predictISSPasses === 'function' ? predictISSPasses() : []).filter(p => p.peak.elev >= 12);
+  const passes = (typeof predictISSPasses === 'function' ? predictISSPasses(72) : []).filter(p => p.peak.elev >= 12);
   return { darkStart, darkEnd, bodies, passes };
 }
 
-let _tonightShown = false;
+let _tonightShown = false, _tonightDismissed = false;
 function showTonightHeadsUp(force) {
   if (new URLSearchParams(location.search).get('tour') || Tour.running || Tour.rendering) return;
   if (document.getElementById('loc-modal').classList.contains('open')) return;
+  if (_tonightDismissed) return;
   if (_tonightShown && !force) return;
+  const issLoaded = (typeof issReady !== 'undefined') && issReady;
   const d = tonightData();
-  if (!d.passes.length && !d.bodies.length) { _tonightShown = true; return; }   // nothing worth a heads-up
+  if (!issLoaded && !d.bodies.length) return;                // nothing yet — let a later trigger try (don't latch)
   _tonightShown = true;
   document.querySelector('.tonight-pop')?.remove();
   document.querySelector('.pass-banner')?.remove();
+  const now = new Date(), WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const fmtT = ms => { const dt = new Date(ms); return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`; };
+  const fmtWhen = ms => { const dt = new Date(ms); return dt.toDateString() === now.toDateString() ? fmtT(ms) : `${WD[dt.getDay()]} ${fmtT(ms)}`; };
   let rows = '';
-  for (const p of d.passes.slice(0, 2)) {
-    const dur = Math.max(1, Math.round((p.end - p.start) / 60000));
-    const dir = HEADING_NAMES[Math.round(p.peak.az / 45) % 8];
-    rows += `<div class="trow iss" data-iss="${p.start}"><span class="k">🛰️ ISS pass</span><span class="v">${fmtT(p.start)} · ${Math.round(p.peak.elev)}° ${dir} · ~${dur} min</span></div>`;
+  if (issLoaded) {                                           // ISS is always represented when the feed is up
+    if (d.passes.length) {
+      for (const p of d.passes.slice(0, 2)) {
+        const dur = Math.max(1, Math.round((p.end - p.start) / 60000));
+        const dir = HEADING_NAMES[Math.round(p.peak.az / 45) % 8];
+        rows += `<div class="trow iss" data-iss="${p.start}"><span class="k">🛰️ ISS pass</span><span class="v">${fmtWhen(p.start)} · ${Math.round(p.peak.elev)}° ${dir} · ~${dur} min</span></div>`;
+      }
+    } else {
+      rows += `<div class="trow iss" data-track="iss"><span class="k">🛰️ ISS</span><span class="v">no bright pass in 3 days · track live</span></div>`;
+    }
   }
   for (const b of d.bodies) {
     const dir = HEADING_NAMES[Math.round(b.best.az / 45) % 8];
@@ -1741,20 +1751,20 @@ function showTonightHeadsUp(force) {
     <div class="tp-sub">${sub}</div>${rows}
     <div class="tp-foot"><button class="text-btn" id="tp-sky">Open Sky View →</button></div>`;
   document.body.appendChild(el);
+  const close = () => { _tonightDismissed = true; el.remove(); };
   const toSky = () => document.querySelector('#tabs button[data-view="sky"]').click();
-  const track = key => { toSky(); Sky._focusSel.value = key; Sky._focusSel.dispatchEvent(new Event('change')); };
-  el.querySelector('.tp-close').onclick = () => el.remove();
-  el.querySelector('#tp-sky').onclick = () => { toSky(); el.remove(); };
-  el.querySelectorAll('.trow.iss').forEach(r => r.onclick = () => {
-    const st = +r.dataset.iss;
-    Sim.ms = st - 30000; Sim.speedIdx = 3; Sim.paused = false;
-    document.getElementById('t-play').textContent = '⏸';
+  const track = key => {
     toSky();
-    if (!Sky.showISS) { const pill = [...document.querySelectorAll('#sky-toggles .toggle-pill')].find(b => b.textContent.trim() === 'ISS'); if (pill) pill.click(); else Sky.showISS = true; }
-    Sky._focusSel.value = 'iss'; Sky._focusSel.dispatchEvent(new Event('change'));
-    el.remove();
+    if (key === 'iss' && !Sky.showISS) { const pill = [...document.querySelectorAll('#sky-toggles .toggle-pill')].find(b => b.textContent.trim() === 'ISS'); if (pill) pill.click(); else Sky.showISS = true; }
+    Sky._focusSel.value = key; Sky._focusSel.dispatchEvent(new Event('change'));
+  };
+  el.querySelector('.tp-close').onclick = close;
+  el.querySelector('#tp-sky').onclick = () => { toSky(); close(); };
+  el.querySelectorAll('.trow.iss').forEach(r => r.onclick = () => {
+    if (r.dataset.iss) { Sim.ms = +r.dataset.iss - 30000; Sim.speedIdx = 3; Sim.paused = false; document.getElementById('t-play').textContent = '⏸'; }
+    track('iss'); close();
   });
-  el.querySelectorAll('.trow[data-body]').forEach(r => r.onclick = () => { track(r.dataset.body); el.remove(); });
+  el.querySelectorAll('.trow[data-body]').forEach(r => r.onclick = () => { track(r.dataset.body); close(); });
 }
 
 // Stylized display radius per system: real spacing ratios, compressed to sit near the planet
