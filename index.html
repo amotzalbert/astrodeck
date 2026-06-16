@@ -4355,7 +4355,7 @@ function makeMilkyWayPhoto(R) {
   const group = new THREE.Group();
   const tex = texLoader.load(MW_TEX_URL);
   tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending });
   mat.userData.baseOpacity = 0.95;
   const mesh = new THREE.Mesh(new THREE.SphereGeometry(R, 64, 40), mat);
   mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(AT[0], AT[1], AT[2], 0, AT[3], AT[4], AT[5], 0, AT[6], AT[7], AT[8], 0, 0, 0, 0, 1));
