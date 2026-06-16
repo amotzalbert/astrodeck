@@ -634,6 +634,29 @@
   }
   .pass-banner .pass-close:hover { color: var(--text); }
 
+  /* ---------- Tonight heads-up ---------- */
+  .tonight-pop {
+    position: fixed; top: 68px; left: 50%; transform: translateX(-50%);
+    width: min(380px, calc(100vw - 20px));
+    background: var(--panel); backdrop-filter: blur(16px);
+    border: 1px solid rgba(140, 250, 255, 0.32); border-radius: var(--radius);
+    padding: 12px 14px 10px; z-index: 60;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 24px rgba(140,250,255,0.1);
+    animation: bannerIn .45s ease;
+  }
+  .tonight-pop .tp-head { display: flex; align-items: center; justify-content: space-between; }
+  .tonight-pop .tp-title { font-size: 13px; font-weight: 600; color: #8cfaff; }
+  .tonight-pop .tp-close { background: none; border: 0; cursor: pointer; color: var(--text-dim); font-size: 18px; width: 28px; height: 28px; line-height: 1; flex-shrink: 0; }
+  .tonight-pop .tp-close:hover { color: var(--text); }
+  .tonight-pop .tp-sub { font-size: 11px; color: var(--text-dim); margin: 1px 0 8px; }
+  .tonight-pop .trow { display: flex; justify-content: space-between; gap: 10px; padding: 5px 6px; border-radius: 8px; cursor: pointer; font-size: 12px; }
+  .tonight-pop .trow:hover { background: rgba(255,255,255,0.06); }
+  .tonight-pop .trow .k { color: var(--text); white-space: nowrap; }
+  .tonight-pop .trow .v { color: var(--text-dim); text-align: right; }
+  .tonight-pop .trow.iss { border: 1px solid rgba(140,250,255,0.25); margin-bottom: 3px; }
+  .tonight-pop .trow.iss .k { color: #8cfaff; }
+  .tonight-pop .tp-foot { margin-top: 8px; text-align: right; }
+
   /* ---------- Loading overlay ---------- */
   #loader {
     position: fixed; inset: 0; z-index: 200;
@@ -1249,8 +1272,10 @@ function saveLoc(l) {
   Loc = l;
   localStorage.setItem('astrodeck.location', JSON.stringify(l));
   refreshLocChip();
-  document.querySelector('.pass-banner')?.remove();          // re-evaluate passes for the new spot
-  if (typeof issReady !== 'undefined' && issReady) maybeShowPassBanner();
+  document.querySelector('.pass-banner')?.remove();
+  document.querySelector('.tonight-pop')?.remove();          // re-evaluate for the new spot
+  _tonightShown = false;
+  if (typeof showTonightHeadsUp === 'function') showTonightHeadsUp();
 }
 function refreshLocChip() {
   const fmt = (v, pos, neg) => `${Math.abs(v).toFixed(2)}°${v >= 0 ? pos : neg}`;
@@ -1413,7 +1438,7 @@ async function initISS() {
     issReady = true;
     Orrery.addISS();
     Sky.addISS();
-    maybeShowPassBanner();
+    showTonightHeadsUp();                                     // ISS now loaded → include passes
   } catch (err) { console.warn('ISS data unavailable', err); }
 }
 // TEME position/velocity (km) at a date — null when TLE can't be trusted
@@ -1654,6 +1679,82 @@ function maybeShowPassBanner() {
     Sky._focusSel.value = 'iss';
     Sky._focusSel.dispatchEvent(new Event('change'));
   };
+}
+
+// "Tonight" heads-up: what's worth looking up for tonight from the saved location —
+// naked-eye ISS passes + visible planets/Moon in the coming dark window. Pops on
+// every load when relevant (not localStorage-gated), dismissible.
+function tonightData() {
+  const lat = Loc.lat, lon = Loc.lon, jdOf = ms => ms / 86400000 + 2440587.5;
+  const STEP = 10 * 60000, t0 = Date.now();
+  let darkStart = null, darkEnd = null;
+  for (let t = t0; t <= t0 + 26 * 3600000; t += STEP) {
+    const a = sunAltitude(jdOf(t), lat, lon);
+    if (darkStart == null) { if (a < -4) darkStart = t; }
+    else if (a > -4) { darkEnd = t; break; }
+  }
+  const bodies = [];
+  if (darkStart != null) {
+    if (darkEnd == null) darkEnd = darkStart + 14 * 3600000;
+    const dMid = dDays(jdOf((darkStart + darkEnd) / 2));
+    const s = sunGeo(dMid), m = moonGeo(dMid);
+    const lit = Math.round((1 - (s.x * m.x + s.y * m.y + s.z * m.z) / (s.r * m.r)) / 2 * 100);
+    const DEFS = [['moon', `Moon · ${lit}% lit`], ['venus', 'Venus'], ['jupiter', 'Jupiter'], ['mars', 'Mars'], ['saturn', 'Saturn'], ['mercury', 'Mercury']];
+    for (const [key, label] of DEFS) {
+      let first = null, last = null, best = null;
+      for (let t = darkStart; t <= darkEnd; t += STEP) {
+        const p = bodyAltAzAt(key, jdOf(t), lat, lon);
+        if (p.alt > 5) { if (first == null) first = t; last = t; if (!best || p.alt > best.alt) best = { alt: p.alt, az: p.az }; }
+      }
+      if (best) bodies.push({ key, label, first, last, best });
+    }
+  }
+  const passes = (typeof predictISSPasses === 'function' ? predictISSPasses() : []).filter(p => p.peak.elev >= 12);
+  return { darkStart, darkEnd, bodies, passes };
+}
+
+let _tonightShown = false;
+function showTonightHeadsUp(force) {
+  if (new URLSearchParams(location.search).get('tour') || Tour.running || Tour.rendering) return;
+  if (document.getElementById('loc-modal').classList.contains('open')) return;
+  if (_tonightShown && !force) return;
+  const d = tonightData();
+  if (!d.passes.length && !d.bodies.length) { _tonightShown = true; return; }   // nothing worth a heads-up
+  _tonightShown = true;
+  document.querySelector('.tonight-pop')?.remove();
+  document.querySelector('.pass-banner')?.remove();
+  const fmtT = ms => { const dt = new Date(ms); return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`; };
+  let rows = '';
+  for (const p of d.passes.slice(0, 2)) {
+    const dur = Math.max(1, Math.round((p.end - p.start) / 60000));
+    const dir = HEADING_NAMES[Math.round(p.peak.az / 45) % 8];
+    rows += `<div class="trow iss" data-iss="${p.start}"><span class="k">🛰️ ISS pass</span><span class="v">${fmtT(p.start)} · ${Math.round(p.peak.elev)}° ${dir} · ~${dur} min</span></div>`;
+  }
+  for (const b of d.bodies) {
+    const dir = HEADING_NAMES[Math.round(b.best.az / 45) % 8];
+    rows += `<div class="trow" data-body="${b.key}"><span class="k">● ${b.label}</span><span class="v">${fmtT(b.first)}–${fmtT(b.last)} · ${Math.round(b.best.alt)}° ${dir}</span></div>`;
+  }
+  const sub = d.darkStart ? `dark sky ${fmtT(d.darkStart)} – ${fmtT(d.darkEnd)}` : 'twilight all night';
+  const el = document.createElement('div');
+  el.className = 'tonight-pop';
+  el.innerHTML = `<div class="tp-head"><span class="tp-title">✨ Tonight over ${Loc.name}</span><button class="tp-close" aria-label="Close">×</button></div>
+    <div class="tp-sub">${sub}</div>${rows}
+    <div class="tp-foot"><button class="text-btn" id="tp-sky">Open Sky View →</button></div>`;
+  document.body.appendChild(el);
+  const toSky = () => document.querySelector('#tabs button[data-view="sky"]').click();
+  const track = key => { toSky(); Sky._focusSel.value = key; Sky._focusSel.dispatchEvent(new Event('change')); };
+  el.querySelector('.tp-close').onclick = () => el.remove();
+  el.querySelector('#tp-sky').onclick = () => { toSky(); el.remove(); };
+  el.querySelectorAll('.trow.iss').forEach(r => r.onclick = () => {
+    const st = +r.dataset.iss;
+    Sim.ms = st - 30000; Sim.speedIdx = 3; Sim.paused = false;
+    document.getElementById('t-play').textContent = '⏸';
+    toSky();
+    if (!Sky.showISS) { const pill = [...document.querySelectorAll('#sky-toggles .toggle-pill')].find(b => b.textContent.trim() === 'ISS'); if (pill) pill.click(); else Sky.showISS = true; }
+    Sky._focusSel.value = 'iss'; Sky._focusSel.dispatchEvent(new Event('change'));
+    el.remove();
+  });
+  el.querySelectorAll('.trow[data-body]').forEach(r => r.onclick = () => { track(r.dataset.body); el.remove(); });
 }
 
 // Stylized display radius per system: real spacing ratios, compressed to sit near the planet
@@ -5936,6 +6037,8 @@ if (_tourParam) {
 } else if (!localStorage.getItem('astrodeck.location')) {
   document.getElementById('loader-text').textContent = 'Set your observing location…';
   setTimeout(openLocModal, 1100);
+} else {
+  setTimeout(() => showTonightHeadsUp(), 4000);              // heads-up; fallback if ISS feed is slow/down
 }
 </script>
 <script>
