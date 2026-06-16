@@ -6218,6 +6218,8 @@ const Tour = (() => {
   }
 
   window.addEventListener('keydown', e => {
+    const el = e.target;                                       // ignore shortcuts while typing in a field
+    if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
     if ((e.key === 't' || e.key === 'T') && !running) countdownStart();
     else if (e.key === 'Escape' && running) stop();
     else if ((e.key === 'r' || e.key === 'R') && running) { stop(); countdownStart(); }
