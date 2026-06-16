@@ -1685,6 +1685,8 @@ const scaleDist = rAU => {
 // 1P/Halley — osculating elements around the 1986 apparition; retrograde, e≈0.967.
 // dPeri = perihelion 1986 Feb 9 in Schlyter day-numbers (JD − 2451543.5).
 const HALLEY = { N: 58.42, i: 162.26, w: 111.33, a: 17.834, e: 0.96714, n: 0.0130858, dPeri: -5072.5 };
+// 134340 Pluto — mean Keplerian elements (J2000 ecliptic); n in deg/day, dPeri days from J2000.
+const PLUTO = { N: 110.304, i: 17.14, w: 113.763, a: 39.482, e: 0.2488, n: 0.0039753, dPeri: -3738.6 };
 // Map Schlyter ecliptic (x,y,z; z = ecliptic north) → three.js (y-up) with compression
 function eclToScene(p) {
   const r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z) || 1e-9;
@@ -1707,7 +1709,7 @@ const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: false,
   trueTarget: 0, _helioR: {}, _orbitRaw: {}, starlinkStyle: 'dots',
 
   init() {
@@ -1947,6 +1949,14 @@ const Orrery = {
             this.setFocus(this.focusBody);                     // re-apply moon-label visibility
           }
         } },
+      { label: "Halley's Comet", get: () => this.showHalley, set: v => {
+          this.showHalley = v;
+          if (!v && this.focusBody === 'halley') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
+        } },
+      { label: 'Pluto', get: () => this.showPluto, set: v => {
+          this.showPluto = v;
+          if (!v && this.focusBody === 'pluto') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
+        } },
       { label: 'Mag fields', get: () => this.showMag, set: v => {
           this.showMag = v;
           for (const g of this.magFields) g.visible = v;
@@ -2022,6 +2032,7 @@ const Orrery = {
     this.addStarlinkLayer();
     this.addSatGroupLayers();
     this.addHalley();
+    this.addPluto();
     this.addScaleMarkers();
 
     // Sun light dimmer
@@ -2595,9 +2606,13 @@ const Orrery = {
 
   updateHalley(d) {
     if (!this.meshes.halley) return;
+    const mesh = this.meshes.halley;
+    mesh.visible = this.showHalley;
+    if (mesh.userData.label) mesh.userData.label.visible = this.showHalley;
+    if (this.halleyOrbit) this.halleyOrbit.visible = this.showHalley && this.showOrbits;
+    if (!this.showHalley) { if (this.halleyTail) this.halleyTail.visible = false; return; }
     const E = solveKepler(rev(HALLEY.n * (d - HALLEY.dPeri)), HALLEY.e);
     const p = this._halleyPosFromE(E);
-    const mesh = this.meshes.halley;
     mesh.position.copy(eclToScene(p));
     const r = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
     this._helioR.halley = r;
@@ -2611,6 +2626,58 @@ const Orrery = {
       _tmpV.copy(mesh.position).normalize();                 // tail points anti-Sun, always
       t.quaternion.setFromUnitVectors(_tmpV2.set(0, -1, 0), _tmpV);
     } else t.visible = false;
+  },
+
+  // ---- Pluto (dwarf planet) — Kepler orbit, modelled like Halley ----
+  _plutoPosFromE(Edeg) {
+    const H = PLUTO;
+    const xv = H.a * (Math.cos(Edeg * DEG) - H.e);
+    const yv = H.a * Math.sqrt(1 - H.e * H.e) * Math.sin(Edeg * DEG);
+    const v = Math.atan2(yv, xv), r = Math.hypot(xv, yv);
+    const vw = v + H.w * DEG, Nr = H.N * DEG, ir = H.i * DEG;
+    return {
+      x: r * (Math.cos(Nr) * Math.cos(vw) - Math.sin(Nr) * Math.sin(vw) * Math.cos(ir)),
+      y: r * (Math.sin(Nr) * Math.cos(vw) + Math.cos(Nr) * Math.sin(vw) * Math.cos(ir)),
+      z: r * Math.sin(vw) * Math.sin(ir),
+    };
+  },
+
+  addPluto() {
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(0.16, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xc2a17d, roughness: 0.92, metalness: 0.02, emissive: 0x271c12 })
+    );
+    mesh.userData.body = 'pluto';
+    mesh.visible = this.showPluto;
+    const label = makeLabel('Pluto', 'planet');
+    label.visible = this.showPluto;
+    mesh.add(label); mesh.userData.label = label;
+    this.scene.add(mesh);
+    this.meshes.pluto = mesh;
+    this.clickables.push(mesh);
+    this._plutoRaw = [];
+    for (let k = 0; k <= 256; k++) this._plutoRaw.push(this._plutoPosFromE(k / 256 * 360));
+    this.plutoOrbit = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(this._plutoRaw.map(eclToScene)),
+      new THREE.LineBasicMaterial({ color: 0x9bb0d0, transparent: true, opacity: 0.4 })
+    );
+    this.plutoOrbit.userData.isOrbit = true;
+    this.plutoOrbit.visible = this.showPluto && this.showOrbits;
+    this.scene.add(this.plutoOrbit);
+  },
+
+  updatePluto(d) {
+    if (!this.meshes.pluto) return;
+    const mesh = this.meshes.pluto;
+    mesh.visible = this.showPluto;
+    if (mesh.userData.label) mesh.userData.label.visible = this.showPluto;
+    if (this.plutoOrbit) this.plutoOrbit.visible = this.showPluto && this.showOrbits;
+    if (!this.showPluto) return;
+    const E = solveKepler(rev(PLUTO.n * (d - PLUTO.dPeri)), PLUTO.e);
+    const p = this._plutoPosFromE(E);
+    mesh.position.copy(eclToScene(p));
+    this._helioR.pluto = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
+    mesh.scale.setScalar(Math.max(1e-4, 1 - SCALE_MORPH * 0.9995));
   },
 
   // ---- Light ping: a pulse leaves the Sun at real c (in sim time) ----
@@ -2690,6 +2757,14 @@ const Orrery = {
       const attr = this.halleyOrbit.geometry.attributes.position;
       for (let k = 0; k < this._halleyRaw.length; k++) {
         const v = eclToScene(this._halleyRaw[k]);
+        attr.setXYZ(k, v.x, v.y, v.z);
+      }
+      attr.needsUpdate = true;
+    }
+    if (this.plutoOrbit) {
+      const attr = this.plutoOrbit.geometry.attributes.position;
+      for (let k = 0; k < this._plutoRaw.length; k++) {
+        const v = eclToScene(this._plutoRaw[k]);
         attr.setXYZ(k, v.x, v.y, v.z);
       }
       attr.needsUpdate = true;
@@ -3195,6 +3270,7 @@ const Orrery = {
     this.updateSatGroups(d);
     this.updateScopes(d);
     this.updateHalley(d);
+    this.updatePluto(d);
     this.updatePing();
     this._updateScaleExtras();
     this.updateGravityGrid();
@@ -3314,6 +3390,15 @@ function showBodyInfo(body, cardId, onClose) {
     rows = row('Distance from Earth', Math.round(m.r * AU_KM).toLocaleString() + ' km')
          + row('Diameter', '3,474 km') + row('Orbital period', '27.3 days');
     fact = 'The Moon drifts about 3.8 cm farther from Earth every year.';
+  } else if (body === 'pluto') {
+    title = 'Pluto'; kind = 'Dwarf planet · Kuiper Belt';
+    const r = Orrery._helioR.pluto || 39;
+    rows = row('Distance from Sun', r.toFixed(2) + ' AU')
+         + row('Diameter', '2,377 km')
+         + row('Day length', '6.4 days')
+         + row('Year length', '248 years')
+         + row('Moons', '5 — Charon, Styx, Nix, Kerberos, Hydra');
+    fact = 'Reclassified from ninth planet to dwarf planet in 2006, Pluto is smaller than the Moon. NASA’s New Horizons flew past in 2015 and revealed a 1,000 km heart-shaped glacier of frozen nitrogen.';
   } else if (SCOPES[body]) {
     const s = SCOPES[body];
     title = s.name; kind = s.kind;
@@ -3337,7 +3422,7 @@ function showBodyInfo(body, cardId, onClose) {
   }
   const xi = EXTRA_INFO[body];
   if (xi) rows += row('Surface gravity', xi.g) + row('Clocks vs Earth', xi.dil);
-  const link = SCOPES[body]?.url;
+  const link = SCOPES[body]?.url || (body === 'pluto' ? 'https://science.nasa.gov/dwarf-planets/pluto/' : null);
   if (link) rows += `<div class="row clickable" data-link><span class="k">Images &amp; gallery</span><span class="v">Open ↗</span></div>`;
   card.innerHTML = `<button class="close">×</button><h3>${title}</h3><div class="kind">${kind}</div>${rows}<div class="fact">${fact}</div>`;
   card.querySelector('.close').onclick = () => { card.classList.remove('open'); if (onClose) onClose(); };
