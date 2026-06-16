@@ -764,7 +764,7 @@
   body.tour-active header, body.tour-active .toggle-stack, body.tour-active .ctrl-bar,
   body.tour-active .time-restore, body.tour-active #help-btn, body.tour-active #watch-btn, body.tour-active .hint,
   body.tour-active .compass, body.tour-active .stack-fab, body.tour-active .sheet-backdrop,
-  body.tour-active .info-card {
+  body.tour-active .info-card, body.tour-active .pass-banner {
     opacity: 0 !important; pointer-events: none !important;
   }
   /* True-scale HUD + revealed pills stay visible during the rap tour, dropped below
@@ -772,6 +772,7 @@
   body.tour-active #true-scale-banner { top: 9%; left: 3.2%; z-index: 95; }
   body.tour-active #scale-lens { z-index: 95; }
   body.tour-active .toggle-stack { top: 9%; right: 3.2%; z-index: 95; }
+  body.tour-active #time-bar { bottom: 9.5%; z-index: 95; }
   body.tour-active main { inset: 0 !important; }     /* canvas fills the frame, no header gap */
   #tour-overlay {
     position: fixed; inset: 0; z-index: 90; pointer-events: none;
@@ -4963,10 +4964,13 @@ const Tour = (() => {
     seg(16200, ORI, [
       fly(9.8, 3.3, 0.42, 60, 44, -0.66),
     ]);
-    // SYSTEM — real orbital data (16.2 -> 28.0s), 2 shots
+    // SYSTEM — real orbital data (16.2 -> 28.0s), 2 shots.
+    // Shot 1 is LOW + close (edge-on) — a hard, deliberate jump-cut off the high-wide
+    // intro reveal (no glitchy near-match). Shot 2 goes top-down for the time-warp so
+    // you read the planets tracing their orbits.
     seg(28000, ORI, [
-      fly(62, 46, -0.70, 56, 40, -0.30),                     // WIDE / HIGH: top-down sweep
-      fly(38, 8, 0.50, 44, 11, 1.00),                        // TIGHT / LOW: into the inner system
+      fly(50, 7, 0.72, 45, 13, 0.05),                        // LOW / CLOSE: edge-on across the plane
+      fly(40, 23, -0.45, 47, 27, 0.30),                      // TOP-DOWN 3/4: watch the orbits trace (warp)
     ]);
     // JUPITER (28.0 -> 38.2s)
     seg(38200, at('jupiter'), [
@@ -5021,11 +5025,15 @@ const Tour = (() => {
   const EVENTS_RAP = [
     { t: 0, fn() {
         base();
-        pillHide('orrery-toggles'); pillHide('sky-toggles');
+        pillHide('orrery-toggles'); pillHide('sky-toggles'); pillHide('time-bar');
         loadStarlinkCatalog(); O._starReady = false;
         loadSatGroup('nav'); loadSatGroup('geo'); loadSatGroup('debris');
       } },
-    { t: 28000, fn() { O.setFocus('jupiter'); } },
+    { t: 22600, fn() {                                       // "roll the date forward": show time controls, run at 1 mo/s
+        const tb = document.getElementById('time-bar'); if (tb) tb.classList.remove('collapsed');
+        pillShow('time-bar'); Sim.speedIdx = 10; refreshSpeedUI();
+      } },
+    { t: 28000, fn() { O.setFocus('jupiter'); pillHide('time-bar'); Sim.speedIdx = 5; refreshSpeedUI(); } },
     { t: 38200, fn() { O.setFocus('saturn'); } },
     { t: 49000, fn() { O.setFocus('earth'); O.showISS = true; } },
     { t: 59000, fn() {
@@ -5197,10 +5205,14 @@ const Tour = (() => {
   }
 
   /* ---- Deterministic offline render (driven frame-by-frame by Playwright) ---- */
+  // "Roll the date forward" beat (rap variant): warp the sim clock ~150 days during the
+  // system close-up so the planets visibly race along their orbits (held after, no snap-back).
+  const WARP_T0 = 22600, WARP_T1 = 27900, WARP_EXTRA = 150 * 86400000;
+  const warpExtra = t => (SHOTS && t > WARP_T0) ? WARP_EXTRA * smooth(Math.min(1, (t - WARP_T0) / (WARP_T1 - WARP_T0))) : 0;
   const simAt = t =>
-    t < SKY_T0 ? simStart0 + t * 600 :                        // orrery: ~10 min/s
+    t < SKY_T0 ? simStart0 + t * 600 + warpExtra(t) :         // orrery: ~10 min/s (+ warp)
     t < SKY_T1 ? nightMs0 + (t - SKY_T0) * 60 :               // sky: night, ~1 min/s
-                simStart0 + t * 600;                          // close
+                simStart0 + t * 600 + warpExtra(t);           // close
   const morphAt = t =>
     t < MORPH_T0 ? 0 :
     t < SKY_T1 ? Math.min(1, (t - MORPH_T0) / 1000) :         // collapse over ~1s
@@ -5225,6 +5237,7 @@ const Tour = (() => {
   function renderTick(t) {                                    // set full deterministic state for time t, render 1 frame
     for (let i = 1; i < EVENTS.length; i++) if (EVENTS[i].t <= t) { try { EVENTS[i].fn(); } catch (e) {} }
     Sim.ms = simAt(t);                                        // override any event time-pin
+    try { updateClocks(performance.now()); } catch (e) {}     // tick the SIM clock (date rolls forward under the warp)
     setScaleMorph(morphAt(t)); O._applyScaleMorph();
     showCaps(t);
     if (activeView === 'orrery') applyCam(t); else skyPan(t);
