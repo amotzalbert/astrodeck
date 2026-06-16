@@ -5206,9 +5206,12 @@ const Tour = (() => {
 
   /* ---- Deterministic offline render (driven frame-by-frame by Playwright) ---- */
   // "Roll the date forward" beat (rap variant): warp the sim clock ~150 days during the
-  // system close-up so the planets visibly race along their orbits (held after, no snap-back).
-  const WARP_T0 = 22600, WARP_T1 = 27900, WARP_EXTRA = 150 * 86400000;
-  const warpExtra = t => (SHOTS && t > WARP_T0) ? WARP_EXTRA * smooth(Math.min(1, (t - WARP_T0) / (WARP_T1 - WARP_T0))) : 0;
+  // system close-up so the planets visibly race along their orbits. The warp RESETS to 0
+  // at the Jupiter cut (28s) — the reset is hidden by the hard cut — so downstream sim time
+  // stays current and the live satellites / ISS (TLE-propagated) still render correctly.
+  const WARP_T0 = 22600, WARP_T1 = 27900, WARP_END = 28000, WARP_EXTRA = 150 * 86400000;
+  const warpExtra = t => (SHOTS && t > WARP_T0 && t < WARP_END)
+    ? WARP_EXTRA * smooth(Math.min(1, (t - WARP_T0) / (WARP_T1 - WARP_T0))) : 0;
   const simAt = t =>
     t < SKY_T0 ? simStart0 + t * 600 + warpExtra(t) :         // orrery: ~10 min/s (+ warp)
     t < SKY_T1 ? nightMs0 + (t - SKY_T0) * 60 :               // sky: night, ~1 min/s
