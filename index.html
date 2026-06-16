@@ -219,9 +219,66 @@
   /* ---------- Toggle pills (sky view) ---------- */
   .toggle-stack {
     position: absolute; top: 14px; right: 14px;
-    display: flex; flex-direction: column; gap: 6px;
-    z-index: 20;
+    display: flex; flex-direction: column; gap: 3px;
+    width: 216px; max-height: calc(100vh - 74px); overflow-y: auto; overflow-x: hidden;
+    background: var(--panel); backdrop-filter: blur(16px);
+    border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 7px; z-index: 20; scrollbar-width: thin;
+    transition: transform .3s cubic-bezier(.22,.61,.36,1);
   }
+  .toggle-stack.collapsed { transform: translateX(calc(100% + 20px)); pointer-events: none; }
+  /* ----- Folded console: master header, accordion groups ----- */
+  .console-head {
+    display: flex; align-items: center; gap: 8px;
+    padding: 4px 6px 7px; border-bottom: 1px solid var(--border-soft); margin-bottom: 3px;
+  }
+  .console-head .console-title {
+    font-family: var(--mono); font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase;
+    color: var(--accent); opacity: 0.85;
+  }
+  .console-head .console-fold {
+    margin-left: auto; appearance: none; cursor: pointer; width: 22px; height: 22px;
+    border-radius: 6px; border: 1px solid var(--border-soft); background: rgba(255,255,255,0.04);
+    color: var(--text-dim); font-size: 12px; line-height: 1; display: grid; place-items: center;
+  }
+  .console-head .console-fold:hover { color: var(--text); border-color: var(--border); }
+  .console-tab {
+    display: none; position: absolute; top: 16px; right: 14px; z-index: 19;
+    appearance: none; cursor: pointer; padding: 9px 10px; border-radius: 10px;
+    background: var(--panel); backdrop-filter: blur(14px);
+    border: 1px solid var(--border); color: var(--accent);
+    font-family: var(--mono); font-size: 10px; letter-spacing: 1.4px; text-transform: uppercase;
+    writing-mode: vertical-rl; box-shadow: var(--glow);
+  }
+  .console-tab.show { display: block; }
+  .console-tab:hover { color: var(--text); }
+  .cgroup { display: flex; flex-direction: column; }
+  .cgroup-head {
+    appearance: none; cursor: pointer; display: flex; align-items: center; gap: 7px;
+    width: 100%; background: none; border: 0; border-radius: 8px;
+    padding: 7px 7px; color: var(--text-dim); text-align: left;
+    font-family: var(--font); font-size: 10.5px; font-weight: 600;
+    letter-spacing: 1.2px; text-transform: uppercase; transition: background .15s, color .15s;
+  }
+  .cgroup-head:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+  .cgroup-head .cg-chev { font-size: 9px; transition: transform .2s; opacity: 0.7; flex-shrink: 0; }
+  .cgroup.open > .cgroup-head { color: var(--text); }
+  .cgroup.open > .cgroup-head .cg-chev { transform: rotate(90deg); }
+  .cgroup-head .cg-name { flex: 1 1 auto; }
+  .cgroup-head .cg-badge { display: none; }
+  .cgroup-head .cg-badge.has {
+    display: inline-block; min-width: 16px; text-align: center;
+    background: rgba(94,234,212,0.18); color: var(--accent);
+    border-radius: 999px; padding: 1px 6px; font-size: 9.5px; font-family: var(--mono); letter-spacing: 0;
+  }
+  .cgroup-body { display: none; flex-direction: column; gap: 3px; padding: 2px 2px 5px; }
+  .cgroup.open > .cgroup-body { display: flex; }
+  /* pills become flush console rows inside groups */
+  .cgroup-body .toggle-pill, .cgroup-body .dimmer-pill, .cgroup-body > #starlink-pill {
+    width: 100%; background: transparent; border-color: transparent; backdrop-filter: none;
+  }
+  .cgroup-body .toggle-pill:hover { background: rgba(255,255,255,0.05); }
+  .cgroup-body .toggle-pill.on { background: rgba(94,234,212,0.07); border-color: rgba(94,234,212,0.3); }
   .toggle-pill {
     appearance: none; cursor: pointer;
     display: flex; align-items: center; gap: 8px;
@@ -439,6 +496,76 @@
     transition: all .15s;
   }
   #help-btn:hover { filter: brightness(1.08); box-shadow: 0 0 18px rgba(255,180,70,0.6); }
+  /* ---------- Ask assistant ---------- */
+  #ask-btn {
+    appearance: none; cursor: pointer; flex: 0 0 auto;
+    width: 30px; height: 30px; display: grid; place-items: center;
+    background: linear-gradient(180deg, #8af0e0, #2bb6c9);
+    border: 1px solid rgba(94,234,212,0.85); border-radius: 50%;
+    color: #04201d; font-size: 15px; font-weight: 700; line-height: 1;
+    box-shadow: 0 0 12px rgba(94,234,212,0.4); transition: all .15s;
+  }
+  #ask-btn:hover { filter: brightness(1.08); box-shadow: 0 0 18px rgba(94,234,212,0.65); }
+  #ask-panel {
+    position: fixed; top: 64px; right: 14px; z-index: 55;
+    width: 364px; max-width: calc(100vw - 28px);
+    height: min(564px, calc(100vh - 150px));
+    display: flex; flex-direction: column; overflow: hidden;
+    background: var(--panel-solid); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 24px 80px rgba(0,0,0,0.8), var(--glow);
+    transform: translateX(calc(100% + 26px)); opacity: 0; pointer-events: none;
+    transition: transform .32s cubic-bezier(.22,.61,.36,1), opacity .25s;
+  }
+  #ask-panel.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+  #ask-panel .ask-head {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 14px; border-bottom: 1px solid var(--border-soft);
+  }
+  #ask-panel .ask-title { font-size: 14px; font-weight: 600; color: var(--text); }
+  #ask-panel .ask-sub { font-family: var(--mono); font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; color: var(--accent); opacity: 0.7; }
+  #ask-panel .ask-close {
+    margin-left: auto; appearance: none; cursor: pointer; width: 28px; height: 28px; border-radius: 8px;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border-soft); color: var(--text-dim); font-size: 12px;
+  }
+  #ask-panel .ask-close:hover { color: var(--text); }
+  #ask-log { flex: 1 1 auto; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 9px; scrollbar-width: thin; }
+  .ask-msg { max-width: 86%; padding: 9px 12px; border-radius: 12px; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
+  .ask-msg.user { align-self: flex-end; background: rgba(94,234,212,0.14); border: 1px solid rgba(94,234,212,0.3); color: var(--text); }
+  .ask-msg.bot { align-self: flex-start; background: var(--panel); border: 1px solid var(--border-soft); color: var(--text); }
+  .ask-msg.bot b { color: #8cfaff; font-weight: 600; }
+  .ask-action {
+    display: inline-block; margin-top: 7px; appearance: none; cursor: pointer;
+    padding: 5px 11px; border-radius: 999px; background: rgba(94,234,212,0.16);
+    border: 1px solid rgba(94,234,212,0.4); color: var(--accent); font-size: 12px; font-family: var(--font);
+  }
+  .ask-action:hover { background: rgba(94,234,212,0.26); }
+  #ask-chips { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 14px 8px; }
+  .ask-chip {
+    appearance: none; cursor: pointer; padding: 6px 10px; border-radius: 999px;
+    background: rgba(255,255,255,0.04); border: 1px solid var(--border-soft);
+    color: var(--text-dim); font-size: 11.5px; font-family: var(--font); transition: all .15s;
+  }
+  .ask-chip:hover { color: var(--text); border-color: var(--border); background: rgba(94,234,212,0.08); }
+  .ask-input-row { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border-soft); }
+  #ask-input {
+    flex: 1 1 auto; background: rgba(255,255,255,0.05); border: 1px solid var(--border-soft);
+    border-radius: 10px; padding: 9px 12px; color: var(--text); font-family: var(--font); font-size: 13px; outline: none;
+  }
+  #ask-input:focus { border-color: rgba(94,234,212,0.5); }
+  #ask-send {
+    appearance: none; cursor: pointer; flex: 0 0 auto; width: 40px; border-radius: 10px;
+    background: rgba(94,234,212,0.18); border: 1px solid rgba(94,234,212,0.4); color: var(--accent); font-size: 16px;
+  }
+  #ask-send:hover { background: rgba(94,234,212,0.3); }
+  @media (max-width: 760px) {
+    #ask-panel {
+      top: auto; right: 0; left: 0; bottom: 0; width: auto; max-width: none;
+      height: 72vh; height: 72dvh; border-radius: 18px 18px 0 0; border-bottom: 0;
+      transform: translateY(100%);
+    }
+    #ask-panel.open { transform: translateY(0); }
+    #ask-btn { width: 28px; height: 28px; font-size: 14px; }
+  }
   /* "Watch the tour" button (in the header, left of the location chip) + fullscreen player */
   #watch-btn {
     appearance: none; cursor: pointer; flex: 0 0 auto; height: 30px; padding: 0 14px;
@@ -717,21 +844,25 @@
     /* ---- Controls become a slide-up bottom sheet ---- */
     .toggle-stack {
       position: fixed; inset: auto 0 0 0; top: auto; right: 0;
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-content: start;
+      width: auto; display: flex; flex-direction: column; gap: 4px; align-content: start;
       max-height: 80vh;                       /* fallback for old browsers */
       max-height: 80dvh;                      /* tracks the *visible* viewport so the ✕ header never hides behind iOS Safari's URL bar */
-      overflow-y: auto; -webkit-overflow-scrolling: touch;
+      overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch;
       padding: 0 14px calc(18px + env(safe-area-inset-bottom)) 14px;
       background: rgba(10,15,28,0.96); backdrop-filter: blur(18px);
-      border-top: 1px solid var(--border); border-radius: 18px 18px 0 0;
+      border: 0; border-top: 1px solid var(--border); border-radius: 18px 18px 0 0;
       box-shadow: 0 -12px 44px rgba(0,0,0,0.62);
       transform: translateY(100%); transition: transform .32s cubic-bezier(.22,.61,.36,1);
       z-index: 61;
     }
+    .toggle-stack.collapsed { transform: translateY(100%); }   /* master fold is desktop-only */
     .toggle-stack:not(.folded) { transform: translateY(0); }
+    .toggle-stack:not(.folded).collapsed { transform: translateY(0); }
+    .console-head, .console-tab { display: none !important; }  /* mobile uses the sheet head + FAB */
+    .cgroup { grid-column: 1 / -1; }
     .toggle-pill { font-size: 11px; padding: 11px 12px; }   /* bigger touch targets */
     .dimmer-pill, #starlink-pill, .sky-select { grid-column: 1 / -1; }
-    .dimmer-pill input[type="range"] { width: 100%; flex: 1; }
+    .cgroup-body .dimmer-pill input[type="range"], .dimmer-pill input[type="range"] { width: 100%; flex: 1; }
 
     .sheet-head {
       display: flex; align-items: center; gap: 10px; grid-column: 1 / -1;
@@ -787,7 +918,8 @@
   body.tour-active header, body.tour-active .toggle-stack, body.tour-active .ctrl-bar,
   body.tour-active .time-restore, body.tour-active #help-btn, body.tour-active #watch-btn, body.tour-active .hint,
   body.tour-active .compass, body.tour-active .stack-fab, body.tour-active .sheet-backdrop,
-  body.tour-active .info-card, body.tour-active .pass-banner {
+  body.tour-active .info-card, body.tour-active .pass-banner,
+  body.tour-active #ask-btn, body.tour-active #ask-panel, body.tour-active .tonight-pop, body.tour-active .console-tab {
     opacity: 0 !important; pointer-events: none !important;
   }
   /* True-scale HUD + revealed pills stay visible during the rap tour, dropped below
@@ -865,6 +997,7 @@
   </nav>
   <div class="spacer"></div>
   <button id="watch-btn" title="Watch the AstroDeck tour video"><span class="tri">▶</span><span class="lbl">Watch the tour</span></button>
+  <button id="ask-btn" title="Ask AstroDeck — local assistant">✦</button>
   <button id="help-btn" title="Help &amp; feature guide">?</button>
   <div class="hud-chip clickable" id="chip-location" title="Set observing location">
     <span class="dot"></span>
@@ -1084,6 +1217,22 @@
       </div>
 
     </div>
+  </div>
+</div>
+
+<div id="ask-panel" aria-label="Ask AstroDeck assistant">
+  <div class="ask-head">
+    <div>
+      <div class="ask-title">Ask AstroDeck</div>
+      <div class="ask-sub">local assistant · no internet</div>
+    </div>
+    <button class="ask-close" id="ask-close" aria-label="Close">✕</button>
+  </div>
+  <div id="ask-log"></div>
+  <div id="ask-chips"></div>
+  <div class="ask-input-row">
+    <input id="ask-input" type="text" autocomplete="off" placeholder="Ask about the sky, a date, a planet…">
+    <button id="ask-send" aria-label="Send">→</button>
   </div>
 </div>
 
@@ -4920,6 +5069,59 @@ function addStackSections(hostId, defs) {
   }
 }
 
+// Fold the flat control list into a compact accordion "console": each .stack-section
+// becomes a collapsible group header (chevron + active-count badge); the whole console
+// can fold to an edge tab (desktop). Open/collapsed state persists in localStorage.
+function foldConsole(hostId) {
+  const host = document.getElementById(hostId);
+  const sheetHead = host.querySelector('.sheet-head');                 // mobile sheet header, keep on top
+  const kids = [...host.children].filter(c => c !== sheetHead);
+  const groups = []; let cur = null;
+  for (const el of kids) {
+    if (el.classList.contains('stack-section')) { cur = { name: el.textContent.trim(), head: el, items: [] }; groups.push(cur); }
+    else { if (!cur) { cur = { name: 'More', head: null, items: [] }; groups.push(cur); } cur.items.push(el); }
+  }
+  let state = {}; try { state = JSON.parse(localStorage.getItem('astrodeck.console') || '{}'); } catch (e) {}
+  const save = () => { try { localStorage.setItem('astrodeck.console', JSON.stringify(state)); } catch (e) {} };
+  const built = [];
+  groups.forEach((g, gi) => {
+    const wrap = document.createElement('div'); wrap.className = 'cgroup';
+    const head = document.createElement('button'); head.className = 'cgroup-head';
+    head.innerHTML = `<span class="cg-chev">▸</span><span class="cg-name">${g.name}</span><span class="cg-badge"></span>`;
+    const body = document.createElement('div'); body.className = 'cgroup-body';
+    g.items.forEach(it => body.appendChild(it));
+    if (g.head) g.head.remove();
+    wrap.append(head, body);
+    const key = hostId + '|' + g.name;
+    const open = (key in state) ? state[key] : (gi === 0);             // first group open by default
+    wrap.classList.toggle('open', open);
+    head.onclick = () => { state[key] = wrap.classList.toggle('open'); save(); };
+    host.appendChild(wrap);
+    built.push({ wrap, badge: head.querySelector('.cg-badge') });
+  });
+  // master header + fold-to-edge tab (desktop)
+  const chead = document.createElement('div'); chead.className = 'console-head';
+  chead.innerHTML = `<span class="console-title">Controls</span><button class="console-fold" title="Hide controls" aria-label="Hide controls">⟩</button>`;
+  host.prepend(chead);
+  const tab = document.createElement('button'); tab.className = 'console-tab'; tab.textContent = 'Controls';
+  host.parentElement.appendChild(tab);
+  const ckey = hostId + '|_collapsed';
+  const setCollapsed = v => { host.classList.toggle('collapsed', v); tab.classList.toggle('show', v); state[ckey] = v; save(); };
+  if (state[ckey]) setCollapsed(true);
+  chead.querySelector('.console-fold').onclick = () => setCollapsed(true);
+  tab.onclick = () => setCollapsed(false);
+  // active-count badges (recompute after any toggle inside the console)
+  const updateBadges = () => {
+    for (const b of built) {
+      const n = b.wrap.querySelectorAll('.cgroup-body .toggle-pill.on').length
+              + b.wrap.querySelectorAll('.cgroup-body #starlink-pill.on, .cgroup-body .sat-pill.on').length;
+      b.badge.textContent = n || ''; b.badge.classList.toggle('has', n > 0);
+    }
+  };
+  host.addEventListener('click', () => requestAnimationFrame(updateBadges));
+  updateBadges();
+}
+
 /* ---- Time controls ---- */
 const speedEl = document.getElementById('t-speed');
 const playEl = document.getElementById('t-play');
@@ -5534,15 +5736,17 @@ makeStackCollapsible('sky-toggles', 'Sky Controls');
 addStackSections('orrery-toggles', [
   ['Display', 'Sun view'],
   ['Orbiting Earth', 'ISS'],
-  ['Satellites', 'Navigation'],
   ['Layers & fields', 'Moons & rings'],
   ['Tools', 'True scale'],
+  ['Satellites', 'Starlink'],
   ['Brightness', '@dimmer'],
 ]);
 addStackSections('sky-toggles', [
   ['View', 'Tonight'],
   ['Sky layers', 'Milky Way'],
 ]);
+foldConsole('orrery-toggles');
+foldConsole('sky-toggles');
 updateTimeBarUI();
 refreshSpeedUI();
 {
@@ -6025,6 +6229,256 @@ const Tour = (() => {
 })();
 
 window.__astro = { Orrery, Sky, Sim, Tour, predictISSPasses, Missions, get Loc() { return Loc; } };   // console/debug access
+
+/* ===== Local "Ask" assistant — answers from app data + drives the app (no LLM) ===== */
+const AMA = (() => {
+  const logEl = document.getElementById('ask-log');
+  const chipsEl = document.getElementById('ask-chips');
+  const inputEl = document.getElementById('ask-input');
+  const panelEl = document.getElementById('ask-panel');
+  const C_KMS = 299792.458;
+  const MON = ['jan','feb','mar','apr','may','jun','jul','aug','sep','oct','nov','dec'];
+  const WD3 = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const NAMES = { sun: 'the Sun', moon: 'the Moon', iss: 'the ISS', halley: "Halley's Comet", pluto: 'Pluto',
+    hst: 'Hubble', jwst: 'JWST', chandra: 'Chandra', xmm: 'XMM-Newton', vgr2: 'Voyager 2', cassini: 'Cassini', psp: 'Parker Solar Probe' };
+  const disp = k => NAMES[k] || (k ? k[0].toUpperCase() + k.slice(1) : k);
+  const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const dirOf = az => HEADING_NAMES[Math.round(az / 45) % 8];
+  const fmtT = ms => { const d = new Date(ms); return pad(d.getHours()) + ':' + pad(d.getMinutes()); };
+  const fmtWhen = ms => { const d = new Date(ms); const hm = pad(d.getHours()) + ':' + pad(d.getMinutes()); return d.toDateString() === new Date().toDateString() ? hm : WD3[d.getDay()] + ' ' + hm; };
+  const dForMs = ms => dDays(ms / 86400000 + 2440587.5);
+  const kmStr = au => { const km = au * AU_KM; return km >= 1e6 ? (km / 1e6).toFixed(1) + ' million km' : Math.round(km).toLocaleString() + ' km'; };
+
+  // ---- entity resolution ----
+  const ALIASES = [
+    [/\bjames webb\b|\bwebb\b|\bjwst\b/, 'jwst'], [/\bhubble\b|\bhst\b/, 'hst'], [/\bchandra\b/, 'chandra'],
+    [/\bxmm\b|\bnewton\b/, 'xmm'], [/\bvoyager ?2?\b|\bvgr2\b/, 'vgr2'], [/\bcassini\b/, 'cassini'],
+    [/\bparker\b|\bpsp\b|\bsolar probe\b/, 'psp'], [/\b(?:the )?(?:iss|space station|station)\b/, 'iss'],
+    [/\bhalley'?s?\b|\bcomet\b/, 'halley'], [/\bpluto\b/, 'pluto'], [/\bred planet\b|\bmars\b/, 'mars'],
+    [/\bringed planet\b|\bsaturn\b/, 'saturn'], [/\bmorning star\b|\bevening star\b|\bvenus\b/, 'venus'],
+    [/\bjupiter\b/, 'jupiter'], [/\bmercury\b/, 'mercury'], [/\buranus\b/, 'uranus'], [/\bneptune\b/, 'neptune'],
+    [/\bearth\b/, 'earth'], [/\b(?:the )?moon\b|\bluna\b/, 'moon'], [/\b(?:the )?sun\b|\bsol\b/, 'sun'],
+  ];
+  const MOON_KEYS = Object.keys(MOONS);
+  function allBodies(q) {
+    const found = [];
+    for (const m of MOON_KEYS) { const i = q.search(new RegExp('\\b' + m + '\\b')); if (i >= 0) found.push([i, m]); }
+    for (const [re, k] of ALIASES) { const mm = q.match(re); if (mm) found.push([mm.index, k]); }
+    found.sort((a, b) => a[0] - b[0]);
+    const out = []; for (const [, k] of found) if (!out.includes(k)) out.push(k);
+    return out;
+  }
+  function parseDate(q) {
+    if (/\btonight\b|\btoday\b/.test(q)) return new Date();
+    if (/\btomorrow\b/.test(q)) return new Date(Date.now() + 864e5);
+    if (/\byesterday\b/.test(q)) return new Date(Date.now() - 864e5);
+    let m = q.match(/\bin (\d+) days?\b/); if (m) return new Date(Date.now() + (+m[1]) * 864e5);
+    m = q.match(/\bin (\d+) weeks?\b/); if (m) return new Date(Date.now() + (+m[1]) * 7 * 864e5);
+    m = q.match(/\bnext (sun|mon|tue|wed|thu|fri|sat)/); if (m) { const tgt = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'].indexOf(m[1]); const d = new Date(); let add = (tgt - d.getDay() + 7) % 7; if (!add) add = 7; d.setDate(d.getDate() + add); return d; }
+    m = q.match(/\b(\d{4}-\d{2}-\d{2})(?:[ t](\d{2}:\d{2}))?\b/); if (m) { const dt = new Date(m[1] + 'T' + (m[2] || '21:00')); if (!isNaN(dt)) return dt; }
+    m = q.match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]* (\d{1,2})(?:,? (\d{4}))?\b/);
+    if (m) { const dt = new Date(m[3] ? +m[3] : Sim.date.getFullYear(), MON.indexOf(m[1]), +m[2], 21, 0); if (!isNaN(dt)) return dt; }
+    m = q.match(/\b(\d{1,2}) (jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*(?:,? (\d{4}))?\b/);
+    if (m) { const dt = new Date(m[3] ? +m[3] : Sim.date.getFullYear(), MON.indexOf(m[2]), +m[1], 21, 0); if (!isNaN(dt)) return dt; }
+    return null;
+  }
+
+  // ---- physics helpers ----
+  const issLoaded = () => (typeof issReady !== 'undefined') && issReady;
+  function distEarthAU(key, d) {
+    if (key === 'earth') return 0;
+    if (key === 'sun') return sunGeo(d).r;
+    if (key === 'moon') return moonGeo(d).r;
+    if (PLANET_NAMES.includes(key)) { const h = helio(key, d), s = sunGeo(d); return Math.hypot(h.x + s.x, h.y + s.y, h.z + s.z); }
+    return null;
+  }
+  function distSunAU(key, d) {
+    if (key === 'sun') return 0;
+    if (key === 'earth') return sunGeo(d).r;
+    if (key === 'moon') return sunGeo(d).r;
+    if (PLANET_NAMES.includes(key)) { const h = helio(key, d); return Math.hypot(h.x, h.y, h.z); }
+    return null;
+  }
+  const raStr = ra => { let h = ra * 12 / Math.PI; if (h < 0) h += 24; const hh = Math.floor(h); return hh + 'h ' + pad(Math.round((h - hh) * 60)) + 'm'; };
+  const decStr = dec => { const g = dec * 180 / Math.PI, s = g < 0 ? '−' : '+', a = Math.abs(g); return s + Math.floor(a) + '°' + pad(Math.round((a - Math.floor(a)) * 60)) + "'"; };
+  function altAz(key, jd) { try { return bodyAltAzAt(key, jd, Loc.lat, Loc.lon); } catch (e) { return null; } }
+
+  // ---- app-driving actions ----
+  const tab = v => { const b = document.querySelector('#tabs button[data-view="' + v + '"]'); if (b) b.click(); };
+  function goFocus(key) {
+    if (['vgr2', 'cassini', 'psp'].includes(key)) { Missions.start(key); return; }
+    if (SCOPES[key]) setLayer('Space telescopes', true);
+    if (key === 'iss') setLayer('ISS', true);
+    if (activeView === 'sky' && Sky._focusSel && [...Sky._focusSel.options].some(o => o.value === key)) { Sky._focusSel.value = key; Sky._focusSel.dispatchEvent(new Event('change')); }
+    else { if (activeView !== 'orrery') tab('orrery'); Orrery.setFocus(key); }
+  }
+  function setLayer(label, on) {
+    const pill = [...document.querySelectorAll('.toggle-pill')].find(b => b.textContent.trim().toLowerCase().startsWith(label.toLowerCase()));
+    if (!pill) return false;
+    const isOn = pill.classList.contains('on');
+    if (on === null || isOn !== on) pill.click();
+    return true;
+  }
+  const LAYERS = { orbit: 'Orbit paths', orbits: 'Orbit paths', label: 'Labels', labels: 'Labels', iss: 'ISS', telescope: 'Space telescopes', telescopes: 'Space telescopes', moon: 'Moons & rings', moons: 'Moons & rings', ring: 'Moons & rings', rings: 'Moons & rings', halley: "Halley's Comet", comet: "Halley's Comet", pluto: 'Pluto', mag: 'Mag fields', magnetic: 'Mag fields', 'magnetic field': 'Mag fields', 'magnetic fields': 'Mag fields', gravity: 'Gravity grid', 'gravity grid': 'Gravity grid', grid: 'Gravity grid', marbles: 'Test masses', 'test masses': 'Test masses', 'milky way': 'Milky Way', kuiper: 'Kuiper Belt', 'kuiper belt': 'Kuiper Belt', starlink: 'Starlink', 'true scale': 'True scale' };
+  function setTime(ms, pause) { Sim.ms = ms; if (pause != null) Sim.paused = pause; refreshSpeedUI(); }
+
+  // ---- intent table (commands first, then questions; first match wins) ----
+  const has = (q, re) => re.test(q);
+  const INTENTS = [
+    // ---------- commands ----------
+    { id: 'pause', t: c => /\b(pause|freeze|stop time|hold time)\b/.test(c.q), run: () => { Sim.paused = true; refreshSpeedUI(); return { text: 'Paused.' }; } },
+    { id: 'play', t: c => /\b(play|resume|unpause|start time)\b/.test(c.q), run: () => { Sim.paused = false; refreshSpeedUI(); return { text: 'Playing.' }; } },
+    { id: 'now', t: c => /^(now|today|real[- ]?time|present time)\.?$/.test(c.q) || /\b(jump|go|set|reset|back)\b.{0,14}\b(now|real[- ]?time|present)\b/.test(c.q), run: () => { setTime(Date.now(), false); Sim.speedIdx = 3; refreshSpeedUI(); return { text: 'Back to real time — ' + fmtSim(Sim.date) + '.' }; } },
+    { id: 'faster', t: c => /\b(faster|speed up|quicker)\b/.test(c.q), run: () => { Sim.speedIdx = Math.min(SPEEDS.length - 1, Sim.speedIdx + 1); Sim.paused = false; refreshSpeedUI(); return { text: 'Speeding up — ' + SPEEDS[Sim.speedIdx].label + '.' }; } },
+    { id: 'slower', t: c => /\b(slower|slow down)\b/.test(c.q), run: () => { Sim.speedIdx = Math.max(0, Sim.speedIdx - 1); Sim.paused = false; refreshSpeedUI(); return { text: 'Slowing down — ' + SPEEDS[Sim.speedIdx].label + '.' }; } },
+    { id: 'ping', t: c => /\b(light ping|fire a pulse|light pulse|ping the)\b/.test(c.q), run: () => { if (activeView !== 'orrery') tab('orrery'); Orrery.startPing(); return { text: 'Firing a light pulse from the Sun — watch each planet light up as the wavefront reaches it.' }; } },
+    { id: 'truescale', t: c => /\b(true scale|real size|real scale|actual size)\b/.test(c.q), run: () => { if (activeView !== 'orrery') tab('orrery'); setLayer('True scale', true); return { text: 'Morphing to true scale — everything shrinks to honest sizes and distances.' }; } },
+    { id: 'mission', t: c => /\b(fly|launch|start|replay|run)\b/.test(c.q) && ['vgr2', 'cassini', 'psp'].includes(c.body), run: c => { Missions.start(c.body); return { text: 'Launching the ' + disp(c.body) + ' mission — stepping through its real timeline.' }; } },
+    { id: 'view', t: c => /\b(switch to|open|go to|show)\b.{0,16}\b(solar system|orrery|sky view|sky|missions?|telescope feeds?|feeds?)\b/.test(c.q), run: c => { const v = /\bsky\b/.test(c.q) ? 'sky' : /mission/.test(c.q) ? 'missions' : /feed/.test(c.q) ? 'feeds' : 'orrery'; tab(v); return { text: 'Opening ' + (v === 'orrery' ? 'Solar System' : v[0].toUpperCase() + v.slice(1)) + ' view.' }; } },
+    { id: 'toggle', t: c => /\b(show|hide|turn on|turn off|toggle|enable|disable)\b/.test(c.q) && layerFromQ(c.q), run: c => { const lbl = layerFromQ(c.q); const on = /\b(hide|turn off|disable|off)\b/.test(c.q) ? false : /\btoggle\b/.test(c.q) ? null : true; if (lbl !== 'True scale' && activeView !== 'orrery' && !/milky way|constellation|atmosphere|ground|star names/.test(c.q)) tab('orrery'); const ok = setLayer(lbl, on); return { text: ok ? (on === false ? 'Hid ' : on === null ? 'Toggled ' : 'Showing ') + lbl + '.' : "I couldn't find that layer." }; } },
+    { id: 'settime', t: c => c.date && /\b(time ?travel|jump|go to|set (?:the )?date|set time|travel to|on )\b/.test(c.q) && !/\bwhat|where|how|visible|up\b/.test(c.q), run: c => { setTime(c.date.getTime(), true); return { text: 'Jumped to ' + fmtSim(c.date) + '. The whole system is now showing that moment.' }; } },
+    { id: 'focus', t: c => /\b(take me to|show me|fly to|go to|focus on|center on|look at)\b/.test(c.q) && c.body, run: c => { goFocus(c.body); return { text: 'Focusing ' + disp(c.body) + '.' }; } },
+    // ---------- questions ----------
+    { id: 'tonight', t: c => /\b(tonight|what'?s up|what can i see|visible (?:tonight|now)|what'?s out)\b/.test(c.q), run: c => tonightAnswer(c) },
+    { id: 'nextiss', t: c => /\biss\b|\bspace station\b|\bstation\b/.test(c.q) && /\b(pass|over|see|when|visible|fly)\b/.test(c.q), run: c => issAnswer(c) },
+    { id: 'lighttime', t: c => /\b(light|how long).{0,24}\b(take|reach|delay|travel|get to)\b/.test(c.q) || /\blight ?time\b/.test(c.q), run: c => lightAnswer(c) },
+    { id: 'distance', t: c => /\b(how far|distance|how close)\b/.test(c.q) && c.body, run: c => distanceAnswer(c) },
+    { id: 'altitude', t: c => c.body && /\b(how high|altitude|above the horizon|can i see|is .* up|where in the sky|elevation)\b/.test(c.q), run: c => altAnswer(c) },
+    { id: 'risewhen', t: c => c.body && /\b(rise|set|when does|when will)\b/.test(c.q), run: c => riseAnswer(c) },
+    { id: 'gravity', t: c => c.body && /\b(gravity|weigh|how heavy|surface g)\b/.test(c.q), run: c => { const xi = EXTRA_INFO[c.body]; return { text: xi && xi.g ? 'Surface gravity on <b>' + disp(c.body) + '</b> is <b>' + xi.g + '</b> (Earth = 1 g)' + (xi.dil ? '. A clock there runs ' + xi.dil + '.' : '.') : "I don't have a surface-gravity figure for " + disp(c.body) + '.' }; } },
+    { id: 'moonphase', t: c => /\bmoon\b/.test(c.q) && /\b(phase|full|illuminat|crescent|how lit)\b/.test(c.q), run: c => moonPhaseAnswer(c) },
+    { id: 'where', t: c => c.body && /\b(where|position|coordinates|ra|dec|in the sky)\b/.test(c.q), run: c => whereAnswer(c) },
+    { id: 'compare', t: c => c.body && c.body2 && /\b(compare|vs|versus|bigger|larger|smaller|difference)\b/.test(c.q), run: c => compareAnswer(c) },
+    { id: 'fact', t: c => !!c.body, run: c => factAnswer(c) },
+  ];
+  function layerFromQ(q) { for (const k of Object.keys(LAYERS).sort((a, b) => b.length - a.length)) if (q.includes(k)) return LAYERS[k]; return null; }
+
+  // ---- answer builders ----
+  function tonightAnswer(c) {
+    const d = tonightData();
+    if (!d.darkStart) return { text: "No real darkness in the next day from " + Loc.name + " — the Sun stays too high." };
+    let t = 'From <b>' + Loc.name + '</b>, dark sky ' + fmtT(d.darkStart) + '–' + fmtT(d.darkEnd) + '.\n';
+    if (issLoaded() && d.passes && d.passes.length) { const p = d.passes[0]; t += '🛰️ ISS pass ' + fmtWhen(p.start) + ' · peak ' + Math.round(p.peak.elev) + '° ' + dirOf(p.peak.az) + '\n'; }
+    if (d.bodies.length) for (const b of d.bodies) t += '• ' + b.label + ' — ' + fmtT(b.first) + '–' + fmtT(b.last) + ' · peak ' + Math.round(b.best.alt) + '° ' + dirOf(b.best.az) + '\n';
+    else t += 'No naked-eye planets above the horizon tonight.';
+    return { text: t.trim(), actionLabel: 'Open Sky View ↗', action: () => tab('sky') };
+  }
+  function issAnswer(c) {
+    if (!issLoaded()) return { text: 'ISS orbit data is still loading — ask again in a moment.' };
+    const passes = predictISSPasses(72).filter(p => p.peak.elev >= 12);
+    if (!passes.length) return { text: 'No bright ISS pass over ' + Loc.name + ' in the next 3 days. It still flies over, just not high/sunlit enough to catch by eye.', actionLabel: 'Track it live ↗', action: () => goFocus('iss') };
+    const p = passes[0];
+    return { text: 'Next visible <b>ISS</b> pass over ' + Loc.name + ': <b>' + fmtWhen(p.start) + '</b>, peak ' + Math.round(p.peak.elev) + '° to the ' + dirOf(p.peak.az) + ', ~' + Math.max(1, Math.round((p.end - p.start) / 60000)) + ' min.', actionLabel: 'Show me ↗', action: () => { setTime(p.start - 30000, false); Sim.speedIdx = 3; refreshSpeedUI(); goFocus('iss'); } };
+  }
+  function distanceAnswer(c) {
+    const fromSun = /\bsun\b/.test(c.q) && c.body !== 'sun';
+    if (c.body2 && !fromSun && c.body2 !== c.body) {
+      const a = distSunAU(c.body, c.d), b = distSunAU(c.body2, c.d);
+      if (a != null && b != null) { const h1 = helio(c.body, c.d), h2 = helio(c.body2, c.d); const dd = Math.hypot(h1.x - h2.x, h1.y - h2.y, h1.z - h2.z); return { text: '<b>' + disp(c.body) + '</b> and <b>' + disp(c.body2) + '</b> are about <b>' + dd.toFixed(2) + ' AU</b> apart (' + kmStr(dd) + ')' + c.when + '.' }; }
+    }
+    const au = fromSun ? distSunAU(c.body, c.d) : distEarthAU(c.body, c.d);
+    if (au == null) return { text: "I can give distances for the planets, the Sun and the Moon. Try “how far is Jupiter”." };
+    return { text: '<b>' + disp(c.body) + '</b> is <b>' + au.toFixed(au < 1 ? 4 : 2) + ' AU</b> from ' + (fromSun ? 'the Sun' : 'Earth') + ' (' + kmStr(au) + ')' + c.when + '.', actionLabel: 'Show me ↗', action: () => goFocus(c.body) };
+  }
+  function lightAnswer(c) {
+    const fromSun = /\bsun\b/.test(c.q) && c.body !== 'sun';
+    const body = c.body || 'sun';
+    const au = (body === 'sun') ? sunGeo(c.d).r : (fromSun ? distSunAU(body, c.d) : distEarthAU(body, c.d));
+    if (au == null) return { text: 'I can do light-time for the planets, Sun and Moon.' };
+    const s = au * AU_KM / C_KMS;
+    const t = s < 90 ? s.toFixed(1) + ' seconds' : (s / 60).toFixed(1) + ' minutes';
+    return { text: 'Light from <b>' + disp(body) + '</b> takes about <b>' + t + '</b> to reach ' + (fromSun ? 'the Sun' : 'Earth') + ' (' + au.toFixed(2) + ' AU)' + c.when + '.' };
+  }
+  function altAnswer(c) {
+    if (c.body === 'iss') { if (!issLoaded()) return { text: 'ISS data still loading.' }; const aa = altAz('iss', c.jd); return aa ? { text: 'The ISS is ' + (aa.alt > 0 ? '<b>' + Math.round(aa.alt) + '° up</b> to the ' + dirOf(aa.az) : 'below the horizon') + ' from ' + Loc.name + ' right now.' } : { text: 'Can’t read the ISS position right now.' }; }
+    const aa = altAz(c.body, c.jd);
+    if (!aa) return { text: 'I track sky position for the Sun, Moon and planets. ' + disp(c.body) + " isn't one I can point to." };
+    if (aa.alt < 0) return { text: '<b>' + disp(c.body) + '</b> is below the horizon (' + Math.round(aa.alt) + '°) from ' + Loc.name + c.when + ' — not visible.' };
+    return { text: '<b>' + disp(c.body) + '</b> is <b>' + Math.round(aa.alt) + '° above the horizon</b> to the ' + dirOf(aa.az) + ' from ' + Loc.name + c.when + '.', actionLabel: 'Show me ↗', action: () => goFocus(c.body) };
+  }
+  function riseAnswer(c) {
+    if (!['sun', 'moon', ...PLANET_NAMES].includes(c.body)) return { text: 'I can do rise/set for the Sun, Moon and planets.' };
+    const base = c.workMs, step = 5 * 60000; let prev = altAz(c.body, base / 86400000 + 2440587.5); let rise = null, set = null;
+    for (let t = base + step; t < base + 24 * 3600000 && (!rise || !set); t += step) { const a = altAz(c.body, t / 86400000 + 2440587.5); if (!a || !prev) { prev = a; continue; } if (!rise && prev.alt < 0 && a.alt >= 0) rise = t; if (!set && prev.alt >= 0 && a.alt < 0) set = t; prev = a; }
+    if (!rise && !set) return { text: '<b>' + disp(c.body) + '</b> ' + ((prev && prev.alt > 0) ? 'stays up all day/night' : 'stays below the horizon') + ' from ' + Loc.name + ' over the next 24 h.' };
+    let t = '<b>' + disp(c.body) + '</b> from ' + Loc.name + ': '; const bits = [];
+    if (rise) bits.push('rises ~' + fmtWhen(rise)); if (set) bits.push('sets ~' + fmtWhen(set));
+    return { text: t + bits.join(', ') + '.', actionLabel: 'Show me ↗', action: () => goFocus(c.body) };
+  }
+  function whereAnswer(c) {
+    if (!['sun', 'moon', ...PLANET_NAMES].includes(c.body)) return factAnswer(c);
+    let eq; try { eq = bodyEquatorial(c.body, c.d); } catch (e) { return factAnswer(c); }
+    const aa = altAz(c.body, c.jd);
+    let t = '<b>' + disp(c.body) + '</b>' + c.when + ': RA ' + raStr(eq.ra) + ', Dec ' + decStr(eq.dec) + '.';
+    const sun = distSunAU(c.body, c.d); if (sun != null && c.body !== 'earth') t += ' ' + sun.toFixed(2) + ' AU from the Sun.';
+    if (aa) t += aa.alt > 0 ? ' Currently ' + Math.round(aa.alt) + '° up to the ' + dirOf(aa.az) + ' from ' + Loc.name + '.' : ' Below your horizon right now.';
+    return { text: t, actionLabel: 'Show me ↗', action: () => goFocus(c.body) };
+  }
+  function moonPhaseAnswer(c) {
+    const s = sunGeo(c.d), m = moonGeo(c.d); const lit = Math.round((1 - (s.x * m.x + s.y * m.y + s.z * m.z) / (s.r * m.r)) / 2 * 100);
+    const name = lit < 3 ? 'new moon' : lit > 97 ? 'full moon' : lit < 47 ? 'crescent' : lit < 53 ? 'quarter' : 'gibbous';
+    return { text: 'The Moon is <b>' + lit + '% illuminated</b> (' + name + ')' + c.when + '.', actionLabel: 'Show me ↗', action: () => goFocus('moon') };
+  }
+  function compareAnswer(c) {
+    const row = (a, b) => a + (b != null ? '' : '');
+    const meta = k => PLANET_META[k];
+    const lines = [];
+    const dia = k => TRUE_RADII[k] ? (TRUE_RADII[k] * 2).toLocaleString() + ' km' : (meta(k) ? meta(k).diameter : '—');
+    lines.push('<b>' + disp(c.body) + '</b> vs <b>' + disp(c.body2) + '</b>');
+    lines.push('• Diameter: ' + dia(c.body) + '  /  ' + dia(c.body2));
+    if (meta(c.body) && meta(c.body2)) { lines.push('• Day: ' + meta(c.body).day + '  /  ' + meta(c.body2).day); lines.push('• Year: ' + meta(c.body).year + '  /  ' + meta(c.body2).year); }
+    if (EXTRA_INFO[c.body] && EXTRA_INFO[c.body2]) lines.push('• Gravity: ' + EXTRA_INFO[c.body].g + '  /  ' + EXTRA_INFO[c.body2].g);
+    return { text: lines.join('\n') };
+  }
+  function factAnswer(c) {
+    const k = c.body;
+    if (PLANET_META[k]) { const p = PLANET_META[k]; return { text: '<b>' + disp(k) + '</b> — ' + p.kind + '. Diameter ' + p.diameter + ', day ' + p.day + ', year ' + p.year + '. ' + p.fact, actionLabel: 'Show me ↗', action: () => goFocus(k) }; }
+    if (MOONS[k]) { const m = MOONS[k]; return { text: '<b>' + disp(k) + '</b> orbits ' + disp(m.planet) + '. Diameter ' + m.dia + '. ' + m.fact, actionLabel: 'Show me ↗', action: () => goFocus(k) }; }
+    if (SCOPES[k]) { const s = SCOPES[k]; return { text: '<b>' + s.name + '</b> (' + s.agency + ', launched ' + s.launched + '). ' + s.orbitInfo + '. ' + s.fact, actionLabel: 'Show me ↗', action: () => goFocus(k) }; }
+    if (MISSIONS[k]) { const m = MISSIONS[k]; return { text: '<b>' + m.name + '</b> (' + m.year + '). ' + m.desc, actionLabel: 'Fly the mission ↗', action: () => Missions.start(k) }; }
+    if (k === 'iss') return { text: 'The <b>ISS</b> orbits ~420 km up at 28,000 km/h, circling Earth every ~90 min. Ask for the next pass over you, or say "show me the ISS".', actionLabel: 'Track it ↗', action: () => goFocus('iss') };
+    if (k === 'halley') return { text: "<b>Halley's Comet</b> rides a 76-year retrograde orbit; next perihelion 2061. Time-travel there to see the tail.", actionLabel: 'Show me ↗', action: () => goFocus('halley') };
+    if (k === 'pluto') return { text: '<b>Pluto</b> — dwarf planet in the Kuiper Belt, 39 AU out, 248-year orbit.', actionLabel: 'Show me ↗', action: () => goFocus('pluto') };
+    return { text: fallbackText(c) };
+  }
+  function fallbackText(c) {
+    let hint = "I'm a local assistant — I answer from AstroDeck's own data, not the open web.";
+    if (c && c.body) hint = 'I know about <b>' + disp(c.body) + '</b> — try “where is it”, “how far”, “its gravity”, or “take me to it”.';
+    return hint + '\nTry the chips below, or ask about positions, visibility, distances, dates, planets, missions, or the ISS.';
+  }
+
+  // ---- UI plumbing ----
+  function say(role, html) { const d = document.createElement('div'); d.className = 'ask-msg ' + role; d.innerHTML = html; logEl.appendChild(d); logEl.scrollTop = logEl.scrollHeight; return d; }
+  function answer(res) { const d = say('bot', res.text); if (res.action) { const b = document.createElement('button'); b.className = 'ask-action'; b.textContent = res.actionLabel || 'Show me ↗'; b.onclick = res.action; d.appendChild(document.createElement('br')); d.appendChild(b); } }
+  function submit(text) {
+    text = (text || '').trim(); if (!text) return;
+    say('user', esc(text));
+    let res; try { res = route(text); } catch (e) { res = { text: fallbackText() }; }
+    answer(res);
+  }
+  function route(text) {
+    if (Tour.running || Tour.rendering) return { text: 'Hold on — the cinematic tour is running. Close it first, then ask away.' };
+    const q = text.toLowerCase().trim();
+    const bodies = allBodies(q);
+    const date = parseDate(q);
+    const workMs = date ? date.getTime() : Sim.ms;
+    const c = { q, body: bodies[0] || null, body2: bodies[1] || null, date, workMs, d: dForMs(workMs), jd: workMs / 86400000 + 2440587.5, when: date && !/\btonight\b|\btoday\b/.test(q) ? ' on ' + fmtSim(date).slice(0, 10) : '' };
+    for (const it of INTENTS) { try { if (it.t(c)) return it.run(c) || { text: fallbackText(c) }; } catch (e) {} }
+    return { text: fallbackText(c) };
+  }
+  const CHIPS = ["What's up tonight?", 'Next ISS pass', 'Where is Mars?', 'How far is Jupiter from the Sun?', 'Take me to Saturn', 'Tell me about Saturn'];
+  function renderChips() { chipsEl.innerHTML = ''; for (const t of CHIPS) { const b = document.createElement('button'); b.className = 'ask-chip'; b.textContent = t; b.onclick = () => submit(t); chipsEl.appendChild(b); } }
+  let greeted = false;
+  function open() { panelEl.classList.add('open'); if (!greeted) { greeted = true; say('bot', "Hi — I'm AstroDeck's local assistant. I answer from the app's own data and can move the view for you. Pick a chip or ask away."); renderChips(); } setTimeout(() => inputEl.focus(), 60); }
+  function close() { panelEl.classList.remove('open'); }
+  document.getElementById('ask-btn').onclick = () => panelEl.classList.contains('open') ? close() : open();
+  document.getElementById('ask-close').onclick = close;
+  document.getElementById('ask-send').onclick = () => { submit(inputEl.value); inputEl.value = ''; };
+  inputEl.addEventListener('keydown', e => { if (e.key === 'Enter') { submit(inputEl.value); inputEl.value = ''; } });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && panelEl.classList.contains('open')) close(); });
+  return { submit, open, close };
+})();
+window.__astro.AMA = AMA;
 
 function loop(now) {
   if (Tour.rendering) { requestAnimationFrame(loop); return; }   // offline render drives frames itself
