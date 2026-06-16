@@ -1798,6 +1798,30 @@ const TEX = (() => {
       x.fillStyle = rg; x.fillRect(0, y - 10, S, 20);
     }
   }, { repeat: [1, 1] });
+  // Voyager golden record: concentric grooves on gold.
+  const record = (key) => make(key, 256, (x, S) => {
+    const g = x.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
+    g.addColorStop(0, '#e8c66a'); g.addColorStop(0.6, '#c79a36'); g.addColorStop(1, '#8c6a1e');
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    x.strokeStyle = 'rgba(70,50,12,0.5)'; x.lineWidth = 1;
+    for (let r = 8; r < S / 2; r += 5) { x.beginPath(); x.arc(S / 2, S / 2, r, 0, 2 * Math.PI); x.stroke(); }
+    x.fillStyle = '#5a4414'; x.beginPath(); x.arc(S / 2, S / 2, 7, 0, 2 * Math.PI); x.fill();   // spindle hole
+  }, { repeat: [1, 1] });
+  // Parker heat-shield TPS: white carbon-foam, faint concentric scoring + scorched rim.
+  const shield = (key) => make(key, 256, (x, S) => {
+    const g = x.createRadialGradient(S / 2, S / 2, S * 0.1, S / 2, S / 2, S / 2);
+    g.addColorStop(0, '#f3f4f6'); g.addColorStop(0.78, '#e2e3e6'); g.addColorStop(0.93, '#cdbfb0'); g.addColorStop(1, '#b39a83');
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    x.strokeStyle = 'rgba(150,150,156,0.35)'; x.lineWidth = 1;
+    for (let r = 14; r < S / 2; r += 14) { x.beginPath(); x.arc(S / 2, S / 2, r, 0, 2 * Math.PI); x.stroke(); }
+  }, { repeat: [1, 1] });
+  // Parabolic-dish face: white with radial ribs + concentric support hoops.
+  const dish = (key) => make(key, 256, (x, S) => {
+    x.fillStyle = '#e9ecf2'; x.fillRect(0, 0, S, S);
+    x.strokeStyle = 'rgba(120,128,140,0.5)'; x.lineWidth = 1.5;
+    for (let r = 18; r < S / 2; r += 22) { x.beginPath(); x.arc(S / 2, S / 2, r, 0, 2 * Math.PI); x.stroke(); }
+    for (let i = 0; i < 16; i++) { const a = i / 16 * 2 * Math.PI; x.beginPath(); x.moveTo(S / 2, S / 2); x.lineTo(S / 2 + Math.cos(a) * S / 2, S / 2 + Math.sin(a) * S / 2); x.stroke(); }
+  }, { repeat: [1, 1] });
   function shade(hex, f) {
     const n = parseInt(hex.slice(1), 16);
     const r = Math.min(255, ((n >> 16) & 255) * f) | 0;
@@ -1815,6 +1839,9 @@ const TEX = (() => {
     silverFoil: () => foil('silverFoil', { base: '#b9bfca' }),
     radiator: () => radiator('radiator'),
     kapton: () => kapton('kapton'),
+    record: () => record('record'),
+    shield: () => shield('shield'),
+    dish: () => dish('dish'),
   };
 })();
 
@@ -2995,15 +3022,41 @@ const Orrery = {
         dish.position.set(0, sy * 0.034, 0.057); dish.rotation.x = sy * 0.5; g.add(dish);
       }
     } else if (kind === 'chandra') {
-      tube(0.026, 0.01, 0.125, silver);                      // tapered: mirrors at the wide front
-      tube(0.027, 0.027, 0.022, gold, -0.07);                // aft gold-foil bus
-      const w1 = wing(0.052, 0.024, 0.046, busPanel); w1.rotation.y = -0.5; w1.position.z = 0.04;
-      const w2 = wing(0.052, 0.024, -0.046, busPanel); w2.rotation.y = 0.5; w2.position.z = 0.04;
+      // Long tapered optical bench (HRMA mirrors at the wide front −z), gold-MLI
+      // aft bus, cylindrical sunshade door, twin 3-panel solar wings on the sides.
+      tube(0.027, 0.013, 0.13, gold, -0.005);                // tapered telescope body (gold MLI)
+      tube(0.029, 0.029, 0.02, dark, -0.078);                // mirror sunshade ring (front)
+      const trap = new THREE.Mesh(new THREE.CircleGeometry(0.026, 24), new THREE.MeshStandardMaterial({ color: 0x070a10, roughness: 0.95, side: THREE.DoubleSide }));
+      trap.position.z = -0.086; trap.rotation.x = Math.PI; g.add(trap);   // dark mirror aperture
+      tube(0.016, 0.016, 0.026, silver, 0.072);              // aft instrument module (HRC/ACIS)
+      for (const sx of [1, -1]) {                            // 3-panel solar wing each side
+        strut([sx * 0.016, 0, 0.02], [sx * 0.03, 0, 0.02], 0.0017, gold);
+        for (let i = 0; i < 3; i++) {
+          const panel = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, 0.0015), busPanel);
+          panel.position.set(sx * (0.046 + i * 0.031), 0, 0.02); panel.rotation.y = sx * -0.18; g.add(panel);
+        }
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(0.093, 0.0022, 0.0026), silverPlain);
+        spine.position.set(sx * 0.077, 0.015, 0.021); g.add(spine);
+      }
     } else if (kind === 'xmm') {
-      tube(0.02, 0.02, 0.115, gold);                         // famous gold MLI wrap
-      tube(0.023, 0.023, 0.024, silver, 0.064);              // mirror-end optical bench
-      wing(0.052, 0.026, 0.042, busPanel);
-      wing(0.052, 0.026, -0.042, busPanel);
+      // XMM is mostly a very long telescope tube: gold mirror-module end (front −z),
+      // focal-plane instruments at the far end (+z), fixed solar wings near the mirrors.
+      tube(0.019, 0.019, 0.17, gold);                        // famous long gold-MLI tube
+      tube(0.026, 0.024, 0.03, gold, -0.092);                // wider mirror support platform
+      for (let i = 0; i < 3; i++) {                          // three nested mirror-module apertures
+        const a = i / 3 * 2 * Math.PI;
+        const m = new THREE.Mesh(new THREE.CircleGeometry(0.0085, 16), new THREE.MeshStandardMaterial({ color: 0x0a0d14, roughness: 0.9, side: THREE.DoubleSide }));
+        m.position.set(Math.cos(a) * 0.011, Math.sin(a) * 0.011, -0.107); m.rotation.x = Math.PI; g.add(m);
+      }
+      const fpa = new THREE.Mesh(new THREE.BoxGeometry(0.036, 0.036, 0.03), silver);
+      fpa.position.z = 0.094; g.add(fpa);                    // focal-plane instrument box
+      for (const sx of [1, -1]) {                            // fixed twin wings near the mirror end
+        strut([sx * 0.019, 0, -0.05], [sx * 0.03, 0, -0.05], 0.0017, gold);
+        const arr = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.03, 0.0015), busPanel);
+        arr.position.set(sx * 0.064, 0, -0.05); g.add(arr);
+        const spine = new THREE.Mesh(new THREE.BoxGeometry(0.062, 0.0022, 0.0026), silverPlain);
+        spine.position.set(sx * 0.064, 0.0145, -0.049); g.add(spine);
+      }
     } else {                                                 // jwst
       // 5-layer kite sunshield on the sun side (+z): stacked kapton membranes, tapering
       const shieldMat = new THREE.MeshStandardMaterial({ map: TEX.kapton(), color: 0xffffff, roughness: 0.34, metalness: 0.55, emissive: 0x141016, emissiveIntensity: 0.45, side: THREE.DoubleSide });
@@ -3517,7 +3570,11 @@ const Orrery = {
     }
     const holder = this._pvHolder;
     while (holder.children.length) holder.remove(holder.children[0]);
-    const model = kind === 'iss' ? this._buildISSModel() : this._buildScopeModel(kind);
+    const model = kind === 'iss' ? this._buildISSModel()
+      : kind === 'voyager' ? Missions._buildVoyager()
+      : kind === 'cassini' ? Missions._buildCassini()
+      : kind === 'psp' ? Missions._buildPSP()
+      : this._buildScopeModel(kind);
     const box = new THREE.Box3().setFromObject(model);
     const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
     const maxd = Math.max(size.x, size.y, size.z) || 1;
@@ -4668,7 +4725,7 @@ helpModal.addEventListener('click', e => { if (e.target === helpModal) helpModal
 /* ---- Missions ---- */
 const MISSIONS = {
   vgr2: {
-    name: 'Voyager 2', year: '1977', icon: '🛰', eph: VGR2_EPH, speed: 2629800,
+    name: 'Voyager 2', year: '1977', icon: '🛰', eph: VGR2_EPH, speed: 2629800, craft: 'voyager',
     desc: 'The only spacecraft to visit all four giant planets. Twelve years, four gravity assists, then on into interstellar space.',
     events: [
       { jd: 2443376.5, t: 'Launch', d: 'Aug 20 1977 — a Titan IIIE lifts off from Cape Canaveral, 16 days before Voyager 1.' },
@@ -4681,7 +4738,7 @@ const MISSIONS = {
     ],
   },
   cassini: {
-    name: 'Cassini', year: '1997', icon: '🪐', eph: CAS_EPH, speed: 2629800,
+    name: 'Cassini', year: '1997', icon: '🪐', eph: CAS_EPH, speed: 2629800, craft: 'cassini',
     desc: 'Seven years to Saturn by way of Venus, Earth and Jupiter — then thirteen years among the rings and moons, ending in a deliberate dive.',
     events: [
       { jd: 2450737.5, t: 'Launch', d: 'Oct 15 1997 — too heavy to fly direct, Cassini borrows speed from three planets to reach Saturn.' },
@@ -4694,7 +4751,7 @@ const MISSIONS = {
     ],
   },
   psp: {
-    name: 'Parker Solar Probe', year: '2018', icon: '☀️', eph: PSP_EPH, speed: 604800,
+    name: 'Parker Solar Probe', year: '2018', icon: '☀️', eph: PSP_EPH, speed: 604800, craft: 'psp',
     desc: 'Seven Venus flybys spiral it ever closer to the Sun — the fastest human-made object, brushing the corona itself.',
     events: [
       { jd: 2458342.5, t: 'Launch', d: 'Aug 12 2018 — named for Eugene Parker, who predicted the solar wind; the only NASA craft named for a living scientist.' },
@@ -4727,34 +4784,103 @@ const MISSIONS = {
 };
 const Missions = {
   active: null, line: null, marker: null, _evIdx: -1,
-  // Low-poly Voyager: white high-gain dish, ten-sided bus, RTG boom one way,
-  // the long magnetometer boom the other. Dish faces +z; lookAt(Sun) ≈ toward Earth.
-  _buildCraft() {
+  // Shared probe materials/helpers. All craft point +z toward the Sun (lookAt ORIGIN).
+  _probeMats() {
+    return {
+      white: new THREE.MeshStandardMaterial({ color: 0xe8ecf2, roughness: 0.42, metalness: 0.28, emissive: 0x12151c, emissiveIntensity: 0.4, side: THREE.DoubleSide }),
+      dishM: new THREE.MeshStandardMaterial({ map: TEX.dish(), color: 0xffffff, roughness: 0.5, metalness: 0.25, emissive: 0x101319, emissiveIntensity: 0.4, side: THREE.DoubleSide }),
+      gold: new THREE.MeshStandardMaterial({ map: TEX.goldFoil(), color: 0xffffff, roughness: 0.5, metalness: 0.72, emissive: 0x241a06, emissiveIntensity: 0.5 }),
+      silver: new THREE.MeshStandardMaterial({ map: TEX.silverFoil(), color: 0xffffff, roughness: 0.45, metalness: 0.6, emissive: 0x14161c, emissiveIntensity: 0.4 }),
+      dark: new THREE.MeshStandardMaterial({ color: 0x2f3744, roughness: 0.62, metalness: 0.4, emissive: 0x0a0d12, emissiveIntensity: 0.5 }),
+      cells: new THREE.MeshStandardMaterial({ map: TEX.busArray(), color: 0xffffff, roughness: 0.45, metalness: 0.45, emissive: 0x0a1330, emissiveIntensity: 0.5, side: THREE.DoubleSide }),
+    };
+  },
+  _boom(g, a, b, rad, mat) {                                 // thin cylinder between two points
+    const va = new THREE.Vector3(...a), vb = new THREE.Vector3(...b);
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, va.distanceTo(vb), 6), mat);
+    m.position.copy(va).add(vb).multiplyScalar(0.5);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vb.clone().sub(va).normalize());
+    g.add(m); return m;
+  },
+
+  // Voyager: 3.7 m ribbed parabolic HGA (+z), ten-sided bus, 3-RTG boom one side,
+  // long magnetometer boom the other, science boom + scan platform, golden record.
+  _buildVoyager() {
     const g = new THREE.Group();
-    const white = new THREE.MeshStandardMaterial({ color: 0xe8ecf2, roughness: 0.4, metalness: 0.3, side: THREE.DoubleSide });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x39414f, roughness: 0.6, metalness: 0.4 });
-    const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.014, 0.042, 18, 1, true), white);
-    dish.rotation.x = Math.PI / 2;
-    dish.position.z = 0.02;
-    g.add(dish);
-    const bus = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.022, 10), dark);
-    bus.rotation.x = Math.PI / 2;
-    bus.position.z = -0.014;
-    g.add(bus);
-    const boomR = new THREE.Mesh(new THREE.CylinderGeometry(0.0035, 0.0035, 0.13), dark);
-    boomR.rotation.z = Math.PI / 2;
-    boomR.position.set(0.075, 0, -0.015);
-    g.add(boomR);
+    const M = this._probeMats();
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.085, 0.014, 0.04, 24, 1, true), M.dishM);
+    dish.rotation.x = Math.PI / 2; dish.position.z = 0.022; g.add(dish);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.084, 0.0025, 6, 28), M.white);
+    rim.position.z = 0.042; g.add(rim);
+    this._boom(g, [0, 0, 0.042], [0, 0, 0.078], 0.0015, M.white);   // feed tripod toward focus
+    const feed = new THREE.Mesh(new THREE.ConeGeometry(0.008, 0.012, 12), M.dark);
+    feed.rotation.x = -Math.PI / 2; feed.position.z = 0.078; g.add(feed);
+    const bus = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.024, 10), M.silver);
+    bus.rotation.x = Math.PI / 2; bus.position.z = -0.012; g.add(bus);
+    const rec = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.016, 0.002, 20), M.gold);   // golden record
+    rec.material = new THREE.MeshStandardMaterial({ map: TEX.record(), color: 0xffffff, roughness: 0.35, metalness: 0.85, emissive: 0x2a1f08, emissiveIntensity: 0.5 });
+    rec.rotation.set(Math.PI / 2, 0, 0); rec.position.set(0.034, 0, -0.012); rec.rotation.z = Math.PI / 2; g.add(rec);
+    this._boom(g, [0.03, 0, -0.014], [0.2, 0, -0.014], 0.0035, M.dark);            // RTG boom
     for (let i = 0; i < 3; i++) {
-      const rtg = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.022), dark);
-      rtg.rotation.z = Math.PI / 2;
-      rtg.position.set(0.055 + i * 0.026, 0, -0.015);
-      g.add(rtg);
+      const rtg = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.024, 12), M.dark);
+      rtg.rotation.z = Math.PI / 2; rtg.position.set(0.075 + i * 0.027, 0, -0.014); g.add(rtg);
     }
-    const boomL = new THREE.Mesh(new THREE.CylinderGeometry(0.002, 0.002, 0.3), white);
-    boomL.rotation.z = Math.PI / 2;
-    boomL.position.set(-0.16, 0.012, -0.01);
-    g.add(boomL);
+    this._boom(g, [-0.03, 0, -0.012], [-0.32, 0.012, -0.008], 0.0018, M.white);    // magnetometer boom
+    this._boom(g, [0, -0.03, -0.01], [0.02, -0.14, -0.01], 0.003, M.dark);         // science boom
+    const scan = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.026, 0.022), M.dark);
+    scan.position.set(0.02, -0.15, -0.01); g.add(scan);                            // scan platform / cameras
+    return g;
+  },
+
+  // Cassini: tall gold-MLI bus stack, big white HGA on top (+z), 3 RTGs, long
+  // magnetometer boom, the Huygens probe disc on the flank, main-engine nozzle aft.
+  _buildCassini() {
+    const g = new THREE.Group();
+    const M = this._probeMats();
+    const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.072, 0.02, 0.03, 24, 1, true), M.dishM);
+    dish.rotation.x = Math.PI / 2; dish.position.z = 0.075; g.add(dish);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.071, 0.0022, 6, 28), M.white);
+    rim.position.z = 0.09; g.add(rim);
+    // stacked bus: upper equipment module + bus + propulsion module (gold MLI)
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.032, 0.03, 12), M.gold);
+    up.rotation.x = Math.PI / 2; up.position.z = 0.05; g.add(up);
+    const mid = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.05, 12), M.gold);
+    mid.rotation.x = Math.PI / 2; mid.position.z = 0.012; g.add(mid);
+    const prop = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.026, 0.03, 12), M.silver);
+    prop.rotation.x = Math.PI / 2; prop.position.z = -0.022; g.add(prop);
+    const nozzle = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.02, 12, 1, true), M.dark);
+    nozzle.rotation.x = Math.PI / 2; nozzle.position.z = -0.045; g.add(nozzle);
+    // Huygens probe — wok-shaped disc on the side
+    const huy = new THREE.Mesh(new THREE.ConeGeometry(0.022, 0.016, 20, 1, true), M.gold);
+    huy.rotation.z = Math.PI / 2; huy.position.set(0.044, 0, 0.012); g.add(huy);
+    // 3 RTGs low on the bus
+    for (let i = 0; i < 3; i++) {
+      const a = i / 3 * 2 * Math.PI + 0.5;
+      const rtg = new THREE.Mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.05, 10), M.dark);
+      rtg.position.set(Math.cos(a) * 0.04, Math.sin(a) * 0.04, -0.01); rtg.rotation.x = Math.PI / 2; g.add(rtg);
+    }
+    this._boom(g, [-0.03, 0.02, 0.01], [-0.34, 0.03, 0.01], 0.0016, M.white);       // magnetometer boom
+    return g;
+  },
+
+  // Parker Solar Probe: white hexagonal TPS heat shield on top (+z, sunward),
+  // hexagonal bus tucked in its shadow, two cell wings folded back, small HGA aft.
+  _buildPSP() {
+    const g = new THREE.Group();
+    const M = this._probeMats();
+    const shieldMat = new THREE.MeshStandardMaterial({ map: TEX.shield(), color: 0xffffff, roughness: 0.7, metalness: 0.06, emissive: 0x1a1a1c, emissiveIntensity: 0.5, side: THREE.DoubleSide });
+    const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.006, 6), shieldMat);
+    shield.rotation.x = Math.PI / 2; shield.rotation.z = Math.PI / 6; shield.position.z = 0.085; g.add(shield);
+    this._boom(g, [0.03, 0, 0.082], [0.03, 0, 0.03], 0.0015, M.dark);               // shield standoff struts
+    this._boom(g, [-0.03, 0, 0.082], [-0.03, 0, 0.03], 0.0015, M.dark);
+    const bus = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.05, 6), M.gold);
+    bus.rotation.x = Math.PI / 2; bus.rotation.z = Math.PI / 6; bus.position.z = 0.0; g.add(bus);
+    for (const sx of [1, -1]) {                              // two small cell wings, swept back into shadow
+      const w = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.022, 0.0014), M.cells);
+      w.position.set(sx * 0.044, 0, -0.005); w.rotation.y = sx * 0.5; g.add(w);
+    }
+    const hga = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.004, 0.012, 16, 1, true), M.dishM);
+    hga.rotation.x = -Math.PI / 2; hga.position.z = -0.034; g.add(hga);             // aft high-gain antenna
     return g;
   },
 
@@ -4932,7 +5058,10 @@ const Missions = {
     }
     if (!this.marker) {
       this._craftKind = kind;
-      this.marker = kind === 'apollo' ? this._buildApollo() : this._buildCraft();
+      this.marker = kind === 'apollo' ? this._buildApollo()
+        : kind === 'cassini' ? this._buildCassini()
+        : kind === 'psp' ? this._buildPSP()
+        : this._buildVoyager();
       const lbl = makeLabel('Voyager 2', 'planet');
       lbl.element.style.color = '#ffd27d';
       lbl.element.style.textShadow = '0 0 8px rgba(255,210,125,0.6), 0 1px 3px rgba(0,0,0,0.9)';
