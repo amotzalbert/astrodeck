@@ -2172,6 +2172,18 @@ const SFX = (() => {
   return { launch, planetPing, satSweep, ensure, get enabled() { return enabled; }, set enabled(v) { enabled = v; } };
 })();
 
+// Real radio-scan SFX clips, distributed across the satellite layer toggles.
+const RadioSFX = (() => {
+  const urls = ['radioscan1.mp3', 'radioscan2.mp3', 'radioscan3.mp3', 'radioscan4.mp3'];
+  let enabled = true, pool = null;
+  const init = () => { if (!pool) pool = urls.map(u => { const a = new Audio(u); a.preload = 'auto'; a.volume = 0.55; return a; }); };
+  function play(i) {
+    if (!enabled) return;
+    try { init(); const base = pool[((i % pool.length) + pool.length) % pool.length]; const a = base.cloneNode(); a.volume = base.volume; a.currentTime = 0; a.play().catch(() => {}); } catch (e) {}
+  }
+  return { play, get enabled() { return enabled; }, set enabled(v) { enabled = v; } };
+})();
+
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
@@ -2461,14 +2473,14 @@ const Orrery = {
       const enable = () => {
         if (this.showStarlink) return;
         this.showStarlink = true; sl.classList.add('on');
-        loadStarlinkCatalog(); this._starReady = false; SFX.satSweep(5);
+        loadStarlinkCatalog(); this._starReady = false; RadioSFX.play(5);
       };
       sl.addEventListener('click', e => {
         const mb = e.target.closest('.sl-modes button');
         if (mb) { enable(); this.setStarlinkStyle(mb.dataset.m); return; }
         this.showStarlink = !this.showStarlink;
         sl.classList.toggle('on', this.showStarlink);
-        if (this.showStarlink) { loadStarlinkCatalog(); this._starReady = false; if (this.starlinkStyle === 'rings') this._buildStarlinkRings(); SFX.satSweep(5); }
+        if (this.showStarlink) { loadStarlinkCatalog(); this._starReady = false; if (this.starlinkStyle === 'rings') this._buildStarlinkRings(); RadioSFX.play(5); }
         this._applyStarlinkVis();
       });
       const scopesPill = [...document.querySelectorAll('#orrery-toggles .toggle-pill')].find(b => b.textContent.trim().startsWith('Space'));
@@ -2490,7 +2502,7 @@ const Orrery = {
           b.classList.toggle('on', L.on);
           led.style.background = L.on ? hex : '';
           led.style.boxShadow = L.on ? '0 0 8px ' + hex : '';
-          if (L.on) { loadSatGroup(id); L.ready = false; SFX.satSweep(ch); }
+          if (L.on) { loadSatGroup(id); L.ready = false; RadioSFX.play(ch); }
           this._applySatGroupVis();
         };
         ref.after(b); ref = b;
