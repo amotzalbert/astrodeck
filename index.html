@@ -3536,12 +3536,11 @@ const Orrery = {
     if (this.gravMarbles) for (const mb of this.gravMarbles) { mb.ball.visible = mv; mb.ring.visible = mv; }
   },
 
-  // Summed (softened, log-scaled) well depth at (x,z) + a travelling ripple (Layer C)
-  _gravDepthAt(x, z, wells, ta) {
+  // Summed (softened, log-scaled) well depth at (x,z) — static curvature, no ripple
+  _gravDepthAt(x, z, wells) {
     let raw = 0;
     for (const w of wells) { const dx = x - w.x, dz = z - w.z; raw += w.m / Math.sqrt(dx * dx + dz * dz + w.e); }
-    const r = Math.sqrt(x * x + z * z);
-    return 3.2 * Math.log1p(8 * raw) + 0.2 * Math.sin(r * 0.5 - ta * 1.6) * Math.exp(-r * 0.045);
+    return 3.2 * Math.log1p(8 * raw);
   },
 
   // Write positions + colors for one sheet; nodes are local polar (x,z) offsets from (cx,cz).
@@ -3552,7 +3551,6 @@ const Orrery = {
     const posA = mesh.geometry.attributes.position;
     const colA = mesh.geometry.attributes.color;
     const c0 = GRAV_C0, c1 = GRAV_C1, c2 = GRAV_C2, tmp = _gravTmpColor;
-    const ta = this._gravTa || 0;
     for (let i = 0, n = posA.count; i < n; i++) {
       const x = nodes[i * 2] + cx, z = nodes[i * 2 + 1] + cz;
       let raw = 0, tloc = 0;
@@ -3563,8 +3561,7 @@ const Orrery = {
         const nrm = g / w.peak;                                     // 1 at well centre → 0 far away
         if (nrm > tloc) tloc = nrm;
       }
-      const r = Math.sqrt(x * x + z * z);
-      const depth = 3.2 * Math.log1p(8 * raw) + 0.2 * Math.sin(r * 0.5 - ta * 1.6) * Math.exp(-r * 0.045);
+      const depth = 3.2 * Math.log1p(8 * raw);
       posA.setXYZ(i, x, -0.3 - depth, z);
       const t = Math.min(1, Math.pow(tloc, 0.6));                   // gamma lift: mid-well already colourful
       if (t < 0.5) tmp.lerpColors(c0, c1, t * 2); else tmp.lerpColors(c1, c2, (t - 0.5) * 2);
