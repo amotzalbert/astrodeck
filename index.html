@@ -1213,7 +1213,7 @@
           <div class="help-row"><span class="icon">🌍</span><span><strong>Planets</strong>: Schlyter Keplerian elements (arcminute-level). <strong>Moon</strong>: full perturbation series, ~0.02° vs JPL Horizons. <strong>12 moons</strong>: JPL Horizons osculating elements. <strong>ISS</strong>: daily TLE + SGP4 propagation.</span></div>
           <div class="help-row"><span class="icon">📡</span><span>TLE fetched from <em>wheretheiss.at</em> on load with Celestrak as fallback. Refresh the page to pull the latest TLE for best ISS accuracy.</span></div>
         </div>
-        <p class="help-hint">Star catalog: d3-celestial (BSD) · Textures: three.js / threex.planets · Ephemerides: NASA JPL Horizons</p>
+        <p class="help-hint">Star catalog: d3-celestial (BSD) · Textures: three.js / threex.planets · Ephemerides: NASA JPL Horizons · Milky Way panorama: ESO/S. Brunier (CC BY 4.0)</p>
       </div>
 
     </div>
@@ -3502,7 +3502,7 @@ const Orrery = {
   // rotated from the equatorial frame into the scene's ecliptic frame — the
   // band crosses at its true 60° tilt, core fixed toward Sagittarius.
   addMilkyWay() {
-    const { group, mats } = makeMilkyWay(900);
+    const { group, mats } = makeMilkyWayPhoto(900);
     const eps = 23.4393 * DEG, se = Math.sin(eps), ce = Math.cos(eps);
     group.setRotationFromMatrix(new THREE.Matrix4().makeBasis(
       new THREE.Vector3(1, 0, 0),
@@ -4279,6 +4279,24 @@ function makeMilkyWay(R) {
   return { group, mats };
 }
 
+// Photographic Milky Way: real ESO/S.Brunier 360° panorama (CC BY 4.0) mapped onto
+// an inverted sphere, oriented galactic→equatorial like the point cloud. Additive so
+// the dark sky stays transparent and only the band/stars glow over the scene.
+const MW_TEX_URL = 'milkyway.jpg';
+function makeMilkyWayPhoto(R) {
+  const AT = [-0.0548755604, 0.4941094279, -0.8676661490, -0.8734370902, -0.4448296300, -0.1980763734, -0.4838350155, 0.7469822445, 0.4559837762];
+  const group = new THREE.Group();
+  const tex = texLoader.load(MW_TEX_URL);
+  tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false, blending: THREE.AdditiveBlending });
+  mat.userData.baseOpacity = 0.95;
+  const mesh = new THREE.Mesh(new THREE.SphereGeometry(R, 64, 40), mat);
+  mesh.quaternion.setFromRotationMatrix(new THREE.Matrix4().set(AT[0], AT[1], AT[2], 0, AT[3], AT[4], AT[5], 0, AT[6], AT[7], AT[8], 0, 0, 0, 0, 1));
+  mesh.renderOrder = -10;
+  group.add(mesh);
+  return { group, mats: [mat] };
+}
+
 const SKY_BODIES = {
   sun:     { color: 0xffd27d, size: 30, glow: true },
   moon:    { color: 0xe8ecf4, size: 22, glow: true },
@@ -4489,7 +4507,7 @@ const Sky = {
   },
 
   addMilkyWay() {
-    const { group, mats } = makeMilkyWay(SKY_R * 0.99);
+    const { group, mats } = makeMilkyWayPhoto(SKY_R * 0.99);
     this.mwGroup = group;
     this._mwMats = mats;
     this.mwGroup.visible = this.showMW;
