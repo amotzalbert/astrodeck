@@ -1851,7 +1851,7 @@ const TEX = (() => {
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: false, showMarbles: true,
   trueTarget: 0, _helioR: {}, _orbitRaw: {}, starlinkStyle: 'dots',
 
   init() {
@@ -2107,6 +2107,11 @@ const Orrery = {
           this.showGrav = v;
           this._setGravVisible(v);
           if (v) this._gravT = null;                           // force a sheet rebuild now
+        } },
+      { label: 'Test masses', get: () => this.showMarbles, set: v => {
+          this.showMarbles = v;
+          const mv = v && this.showGrav;
+          if (this.gravMarbles) for (const mb of this.gravMarbles) { mb.ball.visible = mv; mb.ring.visible = mv; }
         } },
       { label: 'Milky Way', get: () => this.showMW, set: v => { this.showMW = v; this.mwGroup.visible = v; } },
       { label: 'Kuiper Belt', get: () => this.showKuiper, set: v => { this.showKuiper = v; if (this.kuiperPoints) this.kuiperPoints.visible = v; } },
@@ -3509,14 +3514,15 @@ const Orrery = {
     this.gravMarbles = [];
     const marbleMat = new THREE.MeshBasicMaterial({ color: 0xffe6b0 });
     for (const def of [{ r: 6, sp: 0.5, ph: 0 }, { r: 11, sp: 0.32, ph: 2.1 }, { r: 19, sp: 0.2, ph: 4.0 }, { r: 30, sp: 0.12, ph: 1.0 }]) {
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 16), marbleMat);
-      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunPoolTex, color: 0xffcf78, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
-      halo.scale.setScalar(2.4); ball.add(halo);                  // gold glow so the test mass pops
-      ball.userData.isGrav = true; ball.visible = this.showGrav; this.scene.add(ball);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.4, 16, 16), marbleMat);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunPoolTex, color: 0xe6b878, transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false }));
+      halo.scale.setScalar(1.6); ball.add(halo);                  // subtle gold glow (dimmed)
+      const mv = this.showGrav && this.showMarbles;
+      ball.userData.isGrav = true; ball.visible = mv; this.scene.add(ball);
       const rv = []; for (let k = 0; k <= 72; k++) { const a = k / 72 * 2 * Math.PI; rv.push(new THREE.Vector3(Math.cos(a) * def.r, 0, Math.sin(a) * def.r)); }
       const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(rv),
-        new THREE.LineBasicMaterial({ color: 0xffd27d, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
-      ring.userData.isGrav = true; ring.visible = this.showGrav; this.scene.add(ring);
+        new THREE.LineBasicMaterial({ color: 0xffd27d, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false }));
+      ring.userData.isGrav = true; ring.visible = mv; this.scene.add(ring);
       this.gravMarbles.push({ ball, ring, def, rv });
     }
   },
@@ -3526,7 +3532,8 @@ const Orrery = {
     if (this.gravGrid.userData.surf) this.gravGrid.userData.surf.visible = v;
     for (const p of this.gravPatches) p.visible = v;
     if (this.gravPools) for (const s of this.gravPools) s.visible = v;
-    if (this.gravMarbles) for (const mb of this.gravMarbles) { mb.ball.visible = v; mb.ring.visible = v; }
+    const mv = v && this.showMarbles;
+    if (this.gravMarbles) for (const mb of this.gravMarbles) { mb.ball.visible = mv; mb.ring.visible = mv; }
   },
 
   // Summed (softened, log-scaled) well depth at (x,z) + a travelling ripple (Layer C)
