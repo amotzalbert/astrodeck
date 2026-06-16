@@ -1706,6 +1706,118 @@ const _gyroEuler = new THREE.Euler();
 const _gyroQ0 = new THREE.Quaternion();
 const IS_TOUCH = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
 
+// ── Procedural spacecraft textures ────────────────────────────────────────
+// Canvas-drawn, cached, self-contained (no external image hosting / CORS).
+// Each returns a THREE.CanvasTexture tuned for the dim point-lit space scene.
+const TEX = (() => {
+  const cache = {};
+  const seeded = (s) => () => (s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  const make = (key, size, draw, { repeat = [1, 1], srgb = true } = {}) => {
+    if (cache[key]) return cache[key];
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    draw(c.getContext('2d'), size);
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(repeat[0], repeat[1]);
+    t.anisotropy = 8;
+    if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+    cache[key] = t;
+    return t;
+  };
+  // Photovoltaic array: grid of cells, busbars, gap lattice, diagonal sheen.
+  const solarCells = (key, { base, cell, gap, cols = 8, rows = 16 }) => make(key, 512, (x, S) => {
+    const rnd = seeded(7 + cols);
+    x.fillStyle = gap; x.fillRect(0, 0, S, S);
+    const cw = S / cols, ch = S / rows, pad = Math.max(1, S * 0.004);
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
+      const v = 0.86 + rnd() * 0.18;
+      x.fillStyle = shade(cell, v);
+      x.fillRect(i * cw + pad, j * ch + pad, cw - pad * 2, ch - pad * 2);
+      // two busbars per cell
+      x.strokeStyle = shade(base, 1.35); x.lineWidth = Math.max(1, S * 0.0016);
+      for (const f of [0.34, 0.66]) {
+        x.beginPath(); x.moveTo(i * cw + cw * f, j * ch + pad); x.lineTo(i * cw + cw * f, (j + 1) * ch - pad); x.stroke();
+      }
+    }
+    // diagonal sheen
+    const g = x.createLinearGradient(0, 0, S, S);
+    g.addColorStop(0, 'rgba(255,255,255,0.10)'); g.addColorStop(0.5, 'rgba(255,255,255,0)');
+    g.addColorStop(0.85, 'rgba(0,0,0,0.12)');
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+  }, { repeat: [1, 1] });
+  // Quilted multi-layer insulation blanket: puffy squares + stitched seams.
+  const quilt = (key, { base, seam, hi }) => make(key, 256, (x, S) => {
+    x.fillStyle = base; x.fillRect(0, 0, S, S);
+    const n = 6, q = S / n;
+    for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) {
+      const cx = (i + 0.5) * q, cy = (j + 0.5) * q;
+      const g = x.createRadialGradient(cx, cy, q * 0.1, cx, cy, q * 0.72);
+      g.addColorStop(0, hi); g.addColorStop(1, base);
+      x.fillStyle = g; x.fillRect(i * q, j * q, q, q);
+    }
+    x.strokeStyle = seam; x.lineWidth = Math.max(1, S * 0.006);
+    x.beginPath();
+    for (let i = 0; i <= n; i++) { x.moveTo(i * q, 0); x.lineTo(i * q, S); x.moveTo(0, i * q); x.lineTo(S, i * q); }
+    x.stroke();
+  }, { repeat: [2, 2] });
+  // Crinkled metallic foil (gold/silver MLI): random wrinkle strokes.
+  const foil = (key, { base }) => make(key, 256, (x, S) => {
+    const rnd = seeded(base.length * 31 + 5);
+    x.fillStyle = base; x.fillRect(0, 0, S, S);
+    for (let i = 0; i < 240; i++) {
+      const x0 = rnd() * S, y0 = rnd() * S, len = 12 + rnd() * 60, ang = rnd() * Math.PI;
+      const light = rnd() > 0.5;
+      x.strokeStyle = light ? shade(base, 1.4) : shade(base, 0.6);
+      x.globalAlpha = 0.18 + rnd() * 0.22; x.lineWidth = 1 + rnd() * 2;
+      x.beginPath(); x.moveTo(x0, y0);
+      x.quadraticCurveTo(x0 + Math.cos(ang) * len * 0.5 + (rnd() - 0.5) * 16, y0 + Math.sin(ang) * len * 0.5,
+                         x0 + Math.cos(ang) * len, y0 + Math.sin(ang) * len);
+      x.stroke();
+    }
+    x.globalAlpha = 1;
+  }, { repeat: [1, 1] });
+  // White radiator panel: fine parallel coolant tubes + panel seams.
+  const radiator = (key) => make(key, 256, (x, S) => {
+    x.fillStyle = '#eef1f6'; x.fillRect(0, 0, S, S);
+    x.strokeStyle = 'rgba(120,130,148,0.55)'; x.lineWidth = 1;
+    for (let i = 0; i < 40; i++) { const y = (i + 0.5) * S / 40; x.beginPath(); x.moveTo(0, y); x.lineTo(S, y); x.stroke(); }
+    x.strokeStyle = 'rgba(90,100,120,0.7)'; x.lineWidth = 3;
+    for (const f of [0.25, 0.5, 0.75]) { x.beginPath(); x.moveTo(f * S, 0); x.lineTo(f * S, S); x.stroke(); }
+  }, { repeat: [1, 1] });
+  // Kapton sunshield membrane: rose-silver sheen + ripstop grid + ripples.
+  const kapton = (key) => make(key, 256, (x, S) => {
+    const g = x.createLinearGradient(0, 0, S, S);
+    g.addColorStop(0, '#cdb6c4'); g.addColorStop(0.45, '#b9bccb'); g.addColorStop(1, '#c9b3bf');
+    x.fillStyle = g; x.fillRect(0, 0, S, S);
+    x.strokeStyle = 'rgba(255,255,255,0.10)'; x.lineWidth = 1;       // ripstop grid
+    for (let i = 0; i <= 16; i++) { const p = i * S / 16; x.beginPath(); x.moveTo(p, 0); x.lineTo(p, S); x.moveTo(0, p); x.lineTo(S, p); x.stroke(); }
+    for (let i = 0; i < 7; i++) {                                    // soft ripples
+      const y = i * S / 7 + 6; const rg = x.createLinearGradient(0, y - 10, 0, y + 10);
+      rg.addColorStop(0, 'rgba(255,255,255,0)'); rg.addColorStop(0.5, 'rgba(255,245,250,0.16)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+      x.fillStyle = rg; x.fillRect(0, y - 10, S, 20);
+    }
+  }, { repeat: [1, 1] });
+  function shade(hex, f) {
+    const n = parseInt(hex.slice(1), 16);
+    const r = Math.min(255, ((n >> 16) & 255) * f) | 0;
+    const g = Math.min(255, ((n >> 8) & 255) * f) | 0;
+    const b = Math.min(255, (n & 255) * f) | 0;
+    return `rgb(${r},${g},${b})`;
+  }
+  return {
+    issArray: () => solarCells('issArray', { base: '#7a4e1d', cell: '#9a6a2a', gap: '#2a1b0a', cols: 8, rows: 18 }),
+    hstArray: () => solarCells('hstArray', { base: '#16224a', cell: '#22356e', gap: '#070b1a', cols: 6, rows: 14 }),
+    busArray: () => solarCells('busArray', { base: '#16224a', cell: '#2a3e72', gap: '#070b1a', cols: 4, rows: 8 }),
+    moduleMLI: () => quilt('moduleMLI', { base: '#dfe3ea', seam: 'rgba(120,128,140,0.6)', hi: '#f4f6fa' }),
+    hstMLI: () => quilt('hstMLI', { base: '#c4cad6', seam: 'rgba(96,104,120,0.6)', hi: '#e6eaf1' }),
+    goldFoil: () => foil('goldFoil', { base: '#b98c33' }),
+    silverFoil: () => foil('silverFoil', { base: '#b9bfca' }),
+    radiator: () => radiator('radiator'),
+    kapton: () => kapton('kapton'),
+  };
+})();
+
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
@@ -2063,34 +2175,59 @@ const Orrery = {
     document.getElementById('orrery-toggles').appendChild(mwDim);
   },
 
-  // Low-poly ISS: truss + module stack + 8 solar wings + radiators (+Z faces the Sun)
+  // Detailed ISS: segmented truss + SARJ-mounted 8 solar wings + quilted-MLI
+  // pressurized module stack (cupola + side labs) + textured radiators (+Z = Sun).
   _buildISSModel() {
     const g = new THREE.Group();
-    const trussMat = new THREE.MeshStandardMaterial({ color: 0xb8bec8, roughness: 0.6, metalness: 0.45 });
-    const moduleMat = new THREE.MeshStandardMaterial({ color: 0xe6e8ec, roughness: 0.4, metalness: 0.25 });
-    const panelMat = new THREE.MeshStandardMaterial({
-      color: 0xb9842f, roughness: 0.5, metalness: 0.4,
-      emissive: 0x2e1f08, side: THREE.DoubleSide,
-    });
-    const radMat = new THREE.MeshStandardMaterial({ color: 0xd6dde4, roughness: 0.75, side: THREE.DoubleSide });
-    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.175, 0.006, 0.006), trussMat));   // main truss
-    for (const [y, len, r] of [[0.012, 0.055, 0.011], [0.052, 0.022, 0.009], [-0.038, 0.062, 0.012], [-0.078, 0.02, 0.014]]) {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 12), moduleMat);
-      m.position.y = y;
-      g.add(m);                                                                    // pressurized modules
+    const trussMat = new THREE.MeshStandardMaterial({ color: 0xc4cad4, roughness: 0.55, metalness: 0.55 });
+    const strutMat = new THREE.MeshStandardMaterial({ color: 0x9aa1ac, roughness: 0.6, metalness: 0.5 });
+    const goldMat = new THREE.MeshStandardMaterial({ map: TEX.goldFoil(), color: 0xffffff, roughness: 0.5, metalness: 0.7, emissive: 0x241a06, emissiveIntensity: 0.5 });
+    const moduleMat = new THREE.MeshStandardMaterial({ map: TEX.moduleMLI(), color: 0xffffff, roughness: 0.62, metalness: 0.18, emissive: 0x141822, emissiveIntensity: 0.45 });
+    const panelMat = new THREE.MeshStandardMaterial({ map: TEX.issArray(), color: 0xffffff, roughness: 0.46, metalness: 0.5, emissive: 0x261707, emissiveIntensity: 0.55, side: THREE.DoubleSide });
+    const radMat = new THREE.MeshStandardMaterial({ map: TEX.radiator(), color: 0xffffff, roughness: 0.78, metalness: 0.12, emissive: 0x14171d, emissiveIntensity: 0.5, side: THREE.DoubleSide });
+    // ── Integrated truss backbone (along x): segmented box + lattice nodes + end caps
+    g.add(new THREE.Mesh(new THREE.BoxGeometry(0.205, 0.0085, 0.0135), trussMat));
+    for (let i = -4; i <= 4; i++) {                            // truss segment ribs
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.016, 0.018), strutMat);
+      rib.position.x = i * 0.022; g.add(rib);
     }
-    for (const x of [-0.087, -0.06, 0.06, 0.087]) {
-      for (const s of [1, -1]) {
-        const p = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.054, 0.0015), panelMat);
-        p.position.set(x, s * 0.042, 0);
-        g.add(p);                                                                  // solar array wings
-      }
+    for (const sx of [1, -1]) { const cap = new THREE.Mesh(new THREE.BoxGeometry(0.012, 0.022, 0.022), trussMat); cap.position.x = sx * 0.10; g.add(cap); }
+    // ── Solar Alpha Rotary Joints + 8 photovoltaic wings (4 pairs near the ends)
+    const wing = (x, y) => {
+      const p = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.028, 0.0016), panelMat);
+      p.position.set(x, y, 0); g.add(p);
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(0.058, 0.002, 0.0026), strutMat);
+      spine.position.set(x, y, 0.0014); g.add(spine);
+      const mast = new THREE.Mesh(new THREE.BoxGeometry(0.0018, 0.028, 0.0026), strutMat);
+      mast.position.set(x - Math.sign(x) * 0.029, y, 0.0014); g.add(mast);
+    };
+    for (const sx of [1, -1]) {
+      const sarj = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.014, 16), goldMat);
+      sarj.rotation.z = Math.PI / 2; sarj.position.x = sx * 0.066; g.add(sarj);
+      for (const x of [0.07, 0.10]) for (const y of [0.033, -0.033]) wing(sx * x, y);
     }
-    for (const x of [-0.024, 0.024]) {
-      const r = new THREE.Mesh(new THREE.BoxGeometry(0.017, 0.036, 0.001), radMat);
-      r.position.set(x, -0.032, 0.014);
-      r.rotation.x = 0.55;
-      g.add(r);                                                                    // thermal radiators
+    // ── Pressurized module cluster (fore–aft along z), quilted MLI
+    const cyl = (len, r, pos, axis, mat) => {
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 18), mat || moduleMat);
+      if (axis === 'x') m.rotation.z = Math.PI / 2;
+      else m.rotation.x = Math.PI / 2;                         // 'z' = fore–aft
+      m.position.set(pos[0], pos[1], pos[2]); g.add(m); return m;
+    };
+    cyl(0.092, 0.0135, [0, 0, 0], 'z');                        // Zvezda→Destiny fore–aft stack
+    cyl(0.03, 0.0145, [0, 0, -0.052], 'z');                    // aft service module
+    const node = cyl(0.03, 0.013, [0, 0, 0.055], 'z');         // forward Node/Harmony
+    const cupola = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.008, 12), moduleMat);  // cupola nadir bump
+    cupola.position.set(0, -0.016, 0.055); g.add(cupola);
+    cyl(0.05, 0.0115, [0.03, 0, 0.012], 'x');                  // Columbus lab (starboard)
+    cyl(0.05, 0.0115, [-0.03, 0, 0.012], 'x');                 // Kibo lab (port)
+    const dock = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.018, 12), goldMat);     // docked vehicle
+    dock.rotation.x = Math.PI / 2; dock.position.set(0, 0, 0.082); g.add(dock);
+    // ── Thermal radiators: a 3-panel array on a vertical boom, tilted toward space
+    const radBoom = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.05, 0.004), strutMat);
+    radBoom.position.set(0, -0.04, -0.005); g.add(radBoom);
+    for (const x of [-0.05, 0, 0.05]) {
+      const rad = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.058, 0.0012), radMat);
+      rad.position.set(x, -0.06, 0.004); rad.rotation.x = 0.42; g.add(rad);
     }
     return g;
   },
@@ -2803,51 +2940,111 @@ const Orrery = {
   // points the optics *away* from the Sun — as real telescopes insist.
   _buildScopeModel(kind) {
     const g = new THREE.Group();
-    const silver = new THREE.MeshStandardMaterial({ color: 0xd9dee8, roughness: 0.35, metalness: 0.6 });
-    const dark = new THREE.MeshStandardMaterial({ color: 0x39414f, roughness: 0.6, metalness: 0.3 });
-    const panel = new THREE.MeshStandardMaterial({ color: 0x2e4f8f, roughness: 0.45, metalness: 0.35, emissive: 0x0a1530, side: THREE.DoubleSide });
-    const gold = new THREE.MeshStandardMaterial({ color: 0xd9b24a, roughness: 0.32, metalness: 0.8, emissive: 0x3a2a06, side: THREE.DoubleSide });
+    const silver = new THREE.MeshStandardMaterial({ map: TEX.silverFoil(), color: 0xffffff, roughness: 0.42, metalness: 0.62, emissive: 0x14161c, emissiveIntensity: 0.4 });
+    const silverPlain = new THREE.MeshStandardMaterial({ color: 0xd9dee8, roughness: 0.35, metalness: 0.65 });
+    const dark = new THREE.MeshStandardMaterial({ color: 0x363d4a, roughness: 0.62, metalness: 0.32, emissive: 0x0c0e13, emissiveIntensity: 0.5 });
+    const gold = new THREE.MeshStandardMaterial({ map: TEX.goldFoil(), color: 0xffffff, roughness: 0.46, metalness: 0.78, emissive: 0x281c07, emissiveIntensity: 0.55 });
+    const hstPanel = new THREE.MeshStandardMaterial({ map: TEX.hstArray(), color: 0xffffff, roughness: 0.44, metalness: 0.45, emissive: 0x0a1330, emissiveIntensity: 0.5, side: THREE.DoubleSide });
+    const busPanel = new THREE.MeshStandardMaterial({ map: TEX.busArray(), color: 0xffffff, roughness: 0.44, metalness: 0.45, emissive: 0x0a1330, emissiveIntensity: 0.5, side: THREE.DoubleSide });
+    const blue = new THREE.MeshStandardMaterial({ color: 0x24407e, roughness: 0.4, metalness: 0.4, emissive: 0x0a1430, emissiveIntensity: 0.5, side: THREE.DoubleSide });
     const tube = (r1, r2, len, mat, z) => {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 20), mat);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r2, len, 24), mat);
       m.rotation.x = Math.PI / 2;
       m.position.z = z || 0;
       g.add(m);
       return m;
     };
     const wing = (w, h, x, mat) => {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.0015), mat || panel);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.0015), mat || blue);
       m.position.x = x;
       g.add(m);
       return m;
     };
+    // strut: a thin cylinder spanning two points (for booms / tripods)
+    const strut = (a, b, rad, mat) => {
+      const va = new THREE.Vector3(a[0], a[1], a[2]), vb = new THREE.Vector3(b[0], b[1], b[2]);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(rad, rad, va.distanceTo(vb), 6), mat || dark);
+      m.position.copy(va).add(vb).multiplyScalar(0.5);
+      m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), vb.clone().sub(va).normalize());
+      g.add(m); return m;
+    };
     if (kind === 'hst') {
-      tube(0.021, 0.021, 0.1, silver, -0.01);
-      tube(0.025, 0.025, 0.034, dark, 0.05);                 // aft shroud (sun side)
-      tube(0.0215, 0.0215, 0.014, dark, -0.062);             // aperture rim
-      wing(0.052, 0.026, 0.042);
-      wing(0.052, 0.026, -0.042);
+      // Silver MLI light-bucket, darker aft bay, open aperture door at front (−z)
+      tube(0.023, 0.023, 0.10, silver, 0);                   // main optical tube (quilted MLI)
+      const aft = new THREE.MeshStandardMaterial({ map: TEX.hstMLI(), color: 0xffffff, roughness: 0.6, metalness: 0.25, emissive: 0x101218, emissiveIntensity: 0.45 });
+      tube(0.026, 0.026, 0.03, aft, 0.052);                  // aft equipment bay (sun side, +z)
+      tube(0.0245, 0.0245, 0.018, dark, -0.052);             // aperture barrel (front)
+      const bafInner = new THREE.Mesh(new THREE.CircleGeometry(0.0235, 24), new THREE.MeshStandardMaterial({ color: 0x05070b, roughness: 0.95, side: THREE.DoubleSide }));
+      bafInner.position.z = -0.058; bafInner.rotation.x = Math.PI; g.add(bafInner);   // black light-trap interior
+      const door = new THREE.Mesh(new THREE.CircleGeometry(0.024, 24), new THREE.MeshStandardMaterial({ map: TEX.silverFoil(), color: 0xdfe4ec, roughness: 0.45, metalness: 0.6, side: THREE.DoubleSide }));
+      door.position.set(0.02, 0.024, -0.06); door.rotation.set(0.55, -0.42, 0.32);   // hinged-open aperture cover
+      g.add(door);
+      // two rigid solar arrays on side masts (deep-blue cells), with frame + diagonal mast
+      for (const sx of [1, -1]) {
+        strut([sx * 0.024, 0, 0.005], [sx * 0.052, 0, 0.005], 0.0018, silverPlain);
+        const arr = new THREE.Mesh(new THREE.BoxGeometry(0.064, 0.032, 0.0015), hstPanel);
+        arr.position.set(sx * 0.086, 0, 0.005); g.add(arr);
+        const frame = new THREE.Mesh(new THREE.BoxGeometry(0.066, 0.0022, 0.0024), silverPlain);
+        frame.position.set(sx * 0.086, 0.0155, 0.006); g.add(frame);
+        const frame2 = frame.clone(); frame2.position.y = -0.0155; g.add(frame2);
+      }
+      // two high-gain antenna dishes on booms
+      for (const sy of [1, -1]) {
+        strut([0, sy * 0.012, 0.03], [0, sy * 0.032, 0.054], 0.0015, silverPlain);
+        const dish = new THREE.Mesh(new THREE.CircleGeometry(0.013, 20), silverPlain);
+        dish.position.set(0, sy * 0.034, 0.057); dish.rotation.x = sy * 0.5; g.add(dish);
+      }
     } else if (kind === 'chandra') {
       tube(0.026, 0.01, 0.125, silver);                      // tapered: mirrors at the wide front
-      tube(0.027, 0.027, 0.02, dark, -0.07);
-      const w1 = wing(0.05, 0.022, 0.045); w1.rotation.y = -0.5; w1.position.z = 0.04;
-      const w2 = wing(0.05, 0.022, -0.045); w2.rotation.y = 0.5; w2.position.z = 0.04;
+      tube(0.027, 0.027, 0.022, gold, -0.07);                // aft gold-foil bus
+      const w1 = wing(0.052, 0.024, 0.046, busPanel); w1.rotation.y = -0.5; w1.position.z = 0.04;
+      const w2 = wing(0.052, 0.024, -0.046, busPanel); w2.rotation.y = 0.5; w2.position.z = 0.04;
     } else if (kind === 'xmm') {
       tube(0.02, 0.02, 0.115, gold);                         // famous gold MLI wrap
-      tube(0.023, 0.023, 0.022, dark, 0.064);
-      wing(0.05, 0.024, 0.04);
-      wing(0.05, 0.024, -0.04);
+      tube(0.023, 0.023, 0.024, silver, 0.064);              // mirror-end optical bench
+      wing(0.052, 0.026, 0.042, busPanel);
+      wing(0.052, 0.026, -0.042, busPanel);
     } else {                                                 // jwst
-      for (const [z, rz] of [[0.012, 0.22], [0.018, -0.16]]) {
-        const sh = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.064, 0.0008), silver);
-        sh.position.z = z;
-        sh.rotation.z = rz;                                  // layered kite sunshield
+      // 5-layer kite sunshield on the sun side (+z): stacked kapton membranes, tapering
+      const shieldMat = new THREE.MeshStandardMaterial({ map: TEX.kapton(), color: 0xffffff, roughness: 0.34, metalness: 0.55, emissive: 0x141016, emissiveIntensity: 0.45, side: THREE.DoubleSide });
+      for (let i = 0; i < 5; i++) {
+        const sh = new THREE.Mesh(new THREE.PlaneGeometry(0.15 - i * 0.007, 0.10 - i * 0.0045), shieldMat);
+        sh.rotation.z = Math.PI / 4;                          // square → diamond/kite
+        sh.position.z = 0.026 + i * 0.0048; sh.position.y = -i * 0.0016;  // stacked + slight stagger toward Sun
         g.add(sh);
       }
-      const mirror = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.004, 6), gold);
-      mirror.rotation.x = Math.PI / 2 - 0.25;
-      mirror.position.z = -0.012;
-      g.add(mirror);
-      tube(0.003, 0.003, 0.03, dark, -0.03);                 // secondary-mirror mast
+      // segmented gold primary mirror — flat-top hex honeycomb (anti-sun, −z).
+      // Tight edge-to-edge packing: flat-top axial layout + matching segment size.
+      // polished beryllium-gold (smooth, not foil); warm self-glow so it stays
+      // gold even though JWST keeps the mirror permanently in shadow (anti-sun)
+      const segMat = new THREE.MeshStandardMaterial({ color: 0xf2c64e, roughness: 0.24, metalness: 0.96, emissive: 0x6e5012, emissiveIntensity: 0.9, side: THREE.DoubleSide });
+      const mir = new THREE.Group();
+      const R = 0.0125;
+      for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++) {
+        if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) > 2) continue;
+        const seg = new THREE.Mesh(new THREE.CylinderGeometry(R * 0.975, R * 0.975, 0.004, 6), segMat);
+        seg.rotation.x = Math.PI / 2;                         // flat-top hexagons, hairline seams
+        seg.position.set(R * 1.5 * q, R * Math.sqrt(3) * (r + q / 2), 0);
+        mir.add(seg);
+      }
+      // black composite backplane — sits BEHIND the hex faces (sun side, local +z) so
+      // the gold honeycomb is unobstructed when viewed from the anti-sun side
+      const back = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.078, 0.006), dark);
+      back.position.z = 0.006; mir.add(back);
+      mir.position.z = -0.03; mir.rotation.x = -0.32;         // tilt the dish up off the shield
+      g.add(mir);
+      // secondary-mirror tripod reaching out front, + the secondary itself
+      const sec = [0.0, 0.056, -0.088];
+      strut([0.032, 0.022, -0.02], sec, 0.0013, dark);
+      strut([-0.032, 0.022, -0.02], sec, 0.0013, dark);
+      strut([0, -0.036, -0.02], sec, 0.0013, dark);
+      const sm = new THREE.Mesh(new THREE.CircleGeometry(0.012, 20), segMat);
+      sm.position.set(sec[0], sec[1], sec[2]); sm.rotation.x = -0.6 + Math.PI; g.add(sm);
+      // spacecraft bus (gold MLI) under the shield + a small solar-panel strip
+      const bus = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.024, 0.024), gold);
+      bus.position.set(0, -0.006, 0.052); g.add(bus);
+      const sp = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.018, 0.0015), busPanel);
+      sp.position.set(0, -0.03, 0.052); sp.rotation.x = 0.2; g.add(sp);
     }
     return g;
   },
@@ -3300,6 +3497,38 @@ const Orrery = {
     if (!this.tourActive) this.controls.update();            // tour orients the camera itself
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
+  },
+
+  // Debug-only: render a single spacecraft model centred on a beauty stand
+  // (own scene + 3-point lighting) so models can be inspected/screenshotted.
+  // Use from console / harness: __astro.Orrery.modelPreview('iss'|'hst'|'jwst', yaw, pitch)
+  modelPreview(kind, yaw = 0.6, pitch = 0.32) {
+    if (!this._pvScene) {
+      const s = new THREE.Scene();
+      s.background = new THREE.Color(0x0a0e16);
+      const cam = new THREE.PerspectiveCamera(38, 1, 0.01, 100);
+      cam.position.set(0, 0, 2.25);
+      const key = new THREE.DirectionalLight(0xfff4e2, 3.1); key.position.set(0.7, 0.5, 1);
+      const fill = new THREE.DirectionalLight(0x9fb6ff, 0.85); fill.position.set(-0.9, -0.3, 0.4);
+      const rim = new THREE.DirectionalLight(0xffffff, 1.3); rim.position.set(-0.4, 0.7, -1);
+      s.add(key, fill, rim, new THREE.AmbientLight(0x36414f, 1.15));
+      const holder = new THREE.Group(); s.add(holder);
+      this._pvScene = s; this._pvCam = cam; this._pvHolder = holder;
+    }
+    const holder = this._pvHolder;
+    while (holder.children.length) holder.remove(holder.children[0]);
+    const model = kind === 'iss' ? this._buildISSModel() : this._buildScopeModel(kind);
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
+    const maxd = Math.max(size.x, size.y, size.z) || 1;
+    model.position.sub(center);
+    const wrap = new THREE.Group(); wrap.add(model);
+    wrap.scale.setScalar(1 / maxd);
+    wrap.rotation.order = 'YXZ'; wrap.rotation.y = yaw; wrap.rotation.x = pitch;
+    holder.add(wrap);
+    const el = this.renderer.domElement;
+    this._pvCam.aspect = el.width / el.height; this._pvCam.updateProjectionMatrix();
+    this._preview = true;
   },
 
   resize() {
@@ -5386,7 +5615,8 @@ function loop(now) {
   Sim.tick();
   Tour.tick(now || performance.now());
   Missions.update();
-  if (activeView === 'orrery') Orrery.update();
+  if (Orrery._preview) Orrery.renderer.render(Orrery._pvScene, Orrery._pvCam);
+  else if (activeView === 'orrery') Orrery.update();
   else if (activeView === 'sky') Sky.update();
   updateClocks(now || performance.now());
   requestAnimationFrame(loop);
