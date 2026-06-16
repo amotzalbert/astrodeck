@@ -4598,6 +4598,15 @@ const Sky = {
       mat.userData.baseOpacity = b.op;
       this.starMats.push(mat);
       this.group.add(new THREE.Points(geo, mat));
+      if (b.size >= 4) {                                       // ever-so-slight additive glow halo on naked-eye stars
+        const gmat = new THREE.PointsMaterial({
+          size: b.size * 2.1, map: starSprite, vertexColors: true, transparent: true,
+          opacity: b.op * 0.18, sizeAttenuation: false, depthWrite: false, blending: THREE.AdditiveBlending,
+        });
+        gmat.userData.baseOpacity = b.op * 0.18;
+        this.starMats.push(gmat);
+        this.group.add(new THREE.Points(geo, gmat));           // shares the bin geometry
+      }
     }
   },
 
