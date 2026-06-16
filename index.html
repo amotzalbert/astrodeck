@@ -2108,6 +2108,63 @@ const TEX = (() => {
   };
 })();
 
+// ── Procedural sound effects (Web Audio, no assets) — used by the light ping ──
+const SFX = (() => {
+  let ctx = null, master = null, delay = null;
+  let enabled = true;
+  function ensure() {
+    if (ctx) { if (ctx.state === 'suspended') ctx.resume(); return ctx; }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    ctx = new AC();
+    master = ctx.createGain(); master.gain.value = 0.30; master.connect(ctx.destination);
+    delay = ctx.createDelay(1.0); delay.delayTime.value = 0.17;           // sci-fi shimmer tail
+    const fb = ctx.createGain(); fb.gain.value = 0.34;
+    const wet = ctx.createGain(); wet.gain.value = 0.45;
+    delay.connect(fb); fb.connect(delay); delay.connect(wet); wet.connect(master);
+    return ctx;
+  }
+  function tone(freq, t0, dur, { type = 'triangle', gain = 0.5, glideTo = null, hp = 200, send = 0.5 } = {}) {
+    const c = ensure(); if (!c || !enabled) return;
+    const t = t0 != null ? t0 : c.currentTime;
+    const o = c.createOscillator(); o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (glideTo) o.frequency.exponentialRampToValueAtTime(glideTo, t + dur);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(gain, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    const f = c.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp;
+    o.connect(f); f.connect(g); g.connect(master);
+    if (send > 0) { const s = c.createGain(); s.gain.value = send; g.connect(s); s.connect(delay); }
+    o.start(t); o.stop(t + dur + 0.05);
+  }
+  function noise(dur, t0) {
+    const c = ensure(); if (!c || !enabled) return;
+    const t = t0 != null ? t0 : c.currentTime;
+    const buf = c.createBuffer(1, Math.max(1, (c.sampleRate * dur) | 0), c.sampleRate);
+    const d = buf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    const src = c.createBufferSource(); src.buffer = buf;
+    const bp = c.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.8;
+    bp.frequency.setValueAtTime(420, t); bp.frequency.exponentialRampToValueAtTime(3200, t + dur);
+    const g = c.createGain(); g.gain.setValueAtTime(0.16, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g); g.connect(master);
+    src.start(t); src.stop(t + dur + 0.05);
+  }
+  // Futuristic launch: a rising charge-and-release sweep + airy whoosh + bright zap.
+  function launch() {
+    const c = ensure(); if (!c || !enabled) return;
+    const t = c.currentTime;
+    tone(110, t, 0.6, { type: 'sawtooth', gain: 0.42, glideTo: 1500, hp: 120, send: 0.35 });
+    noise(0.55, t);
+    tone(1500, t + 0.42, 0.5, { type: 'sine', gain: 0.4, glideTo: 2600, hp: 600, send: 0.7 });
+  }
+  // Ascending "ping" per planet as the wavefront reaches it.
+  const SCALE = [523.25, 587.33, 659.25, 783.99, 880.0, 987.77, 1174.66, 1318.51];
+  function planetPing(idx) { tone(SCALE[Math.min(idx, SCALE.length - 1)], null, 0.55, { type: 'triangle', gain: 0.4, hp: 400, send: 0.6 }); }
+  return { launch, planetPing, ensure, get enabled() { return enabled; }, set enabled(v) { enabled = v; } };
+})();
+
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
@@ -3134,6 +3191,7 @@ const Orrery = {
     }
     this.pingRing.visible = true;
     this.pingLabel.visible = true;
+    SFX.launch();
   },
 
   _restorePingLabels() {
@@ -3166,6 +3224,7 @@ const Orrery = {
       (mins < 100 ? mins.toFixed(1) + ' MIN' : (mins / 60).toFixed(2) + ' HR') + ' · ' + dAU.toFixed(2) + ' AU';
     for (const name of PLANET_NAMES) {
       if (!this.ping.hits[name] && this._helioR[name] && dAU >= this._helioR[name]) {
+        SFX.planetPing(Object.keys(this.ping.hits).length);    // ascending ping as the wavefront hits
         this.ping.hits[name] = true;
         const lbl = this.meshes[name].userData.label;
         lbl.element.style.color = '#ffd27d';
