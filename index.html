@@ -1532,10 +1532,26 @@ async function loadSatGroup(id) {
 // its real orbit. Hubble in LEO; Chandra & XMM-Newton on wildly eccentric
 // multi-day orbits; JWST shown at Sun–Earth L2 (no TLE — placed analytically).
 const SCOPES = {
-  hst:     { id: '20580', label: 'Hubble',     color: 0x9bd7ff },
-  chandra: { id: '25867', label: 'Chandra',    color: 0xffb36b },
-  xmm:     { id: '25989', label: 'XMM-Newton', color: 0xc4a7ff },
-  jwst:    { id: null,    label: 'JWST · L2',  color: 0xffd98a },
+  hst:     { id: '20580', label: 'Hubble', name: 'Hubble Space Telescope', color: 0x9bd7ff,
+    kind: 'Great Observatory · optical / UV', agency: 'NASA / ESA', launched: '24 Apr 1990',
+    orbitInfo: '~535 km low-Earth orbit · 95 min',
+    fact: 'After a famously blurry start — fixed by spacewalking astronauts in 1993 — Hubble has made over 1.6 million observations and still returns front-line science more than 30 years on.',
+    url: 'https://science.nasa.gov/mission/hubble/multimedia/images/' },
+  chandra: { id: '25867', label: 'Chandra', name: 'Chandra X-ray Observatory', color: 0xffb36b,
+    kind: 'Great Observatory · X-ray', agency: 'NASA', launched: '23 Jul 1999',
+    orbitInfo: 'Highly elliptical · 64-hour orbit, out to ~1/3 the way to the Moon',
+    fact: 'Chandra sees the hot, violent universe — black holes, supernova remnants and galaxy clusters glowing in X-rays. Its wild orbit lifts it clear of Earth’s radiation belts for long, clean exposures.',
+    url: 'https://chandra.harvard.edu/photo/' },
+  xmm:     { id: '25989', label: 'XMM-Newton', name: 'XMM-Newton', color: 0xc4a7ff,
+    kind: 'X-ray observatory', agency: 'ESA', launched: '10 Dec 1999',
+    orbitInfo: 'Highly elliptical · 48-hour orbit',
+    fact: 'Europe’s X-ray flagship carries three of the most sensitive X-ray telescopes ever built, catching the faint glow of matter spiralling into black holes and neutron stars.',
+    url: 'https://www.esa.int/Science_Exploration/Space_Science/XMM-Newton' },
+  jwst:    { id: null,    label: 'JWST · L2', name: 'James Webb Space Telescope', color: 0xffd98a,
+    kind: 'Great Observatory · infrared', agency: 'NASA / ESA / CSA', launched: '25 Dec 2021',
+    orbitInfo: 'Halo orbit around Sun–Earth L2 · 1.5 million km from Earth',
+    fact: 'The largest telescope ever flown — a 6.5 m gold-coated mirror behind a tennis-court-sized sunshield, chilled to −233 °C to see the first galaxies and the air of distant worlds.',
+    url: 'https://webbtelescope.org/images' },
 };
 // JWST geocentric ecliptic position (Mm), 2-day step from JPL Horizons
 // spacecraft ephemeris (ID -170), 656 samples: 2026-06-01 → 2030-01-01.
@@ -1877,7 +1893,7 @@ const Orrery = {
         const body = hits[0].object.userData.body;
         showBodyInfo(body, 'orrery-info', null);             // closing the card keeps the focus
         this.highlightOrbit(this.orbits[body] ? body : null);
-        this.setFocus(this.meshes[body] || MOONS[body] || body === 'moon' || body === 'iss' ? body : null);  // sun → heliocentric
+        this.setFocus(this.meshes[body] || MOONS[body] || SCOPES[body] || body === 'moon' || body === 'iss' ? body : null);  // sun → heliocentric
       } else {
         document.getElementById('orrery-info').classList.remove('open');   // empty space: tidy up, stay put
       }
@@ -1918,6 +1934,7 @@ const Orrery = {
           if (v) loadScopes();                                 // lazy TLE fetch on first enable
           if (this.scopeGroup) this.scopeGroup.visible = v;
           for (const s of Object.values(SCOPES)) if (s.labelObj) s.labelObj.visible = v && !!this._satLabelsOn;
+          if (!v && SCOPES[this.focusBody]) { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
         } },
       { label: 'Moons & rings', get: () => this.showMoons, set: v => {
           this.showMoons = v;                                  // Earth's Moon stays — it's family
@@ -2769,6 +2786,10 @@ const Orrery = {
       if (key !== 'jwst' && !s.satrec) continue;             // TLE fetch failed → skip gracefully
       s.model = this._buildScopeModel(key);
       this.scopeGroup.add(s.model);
+      // invisible hit sphere so the tiny model is easy to click / focus (like a planet)
+      const hit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 10), new THREE.MeshBasicMaterial({ visible: false }));
+      hit.userData.body = key; hit.visible = this.showScopes;
+      s.model.add(hit); s.hit = hit; this.clickables.push(hit);
       const label = makeLabel(s.label, 'moon-label');
       label.visible = this.showScopes && !!this._satLabelsOn;
       this.scopeGroup.add(label);
@@ -2803,8 +2824,9 @@ const Orrery = {
 
   updateScopes(d) {
     if (!scopesLoaded || !this.scopeGroup) return;
-    this.scopeGroup.visible = this.showScopes && SCALE_MORPH < 0.02;
-    if (!this.scopeGroup.visible) return;
+    const vis = this.showScopes && SCALE_MORPH < 0.02;
+    this.scopeGroup.visible = vis;
+    if (!vis) { for (const s of Object.values(SCOPES)) if (s.hit) s.hit.visible = false; return; }
     const fresh = Math.abs(Sim.ms - Date.now()) < 45 * 86400000;
     const eps = obliquity(d);
     const labelsOn = !!this._satLabelsOn;
@@ -2854,12 +2876,14 @@ const Orrery = {
         s.orbit.visible = this.showOrbits;
         s.labelObj.position.copy(s.model.position);
         s.labelObj.visible = labelsOn;
+        if (s.hit) s.hit.visible = true;
         continue;
       }
       const pv = fresh ? satellite.propagate(s.satrec, Sim.date) : null;
       const p = pv && pv.position;
       const ok = !!(p && isFinite(p.x));
       s.model.visible = ok;
+      if (s.hit) s.hit.visible = ok;
       s.orbit.visible = ok && this.showOrbits;
       s.labelObj.visible = ok && labelsOn;
       if (!ok) continue;
@@ -3108,6 +3132,7 @@ const Orrery = {
   // World-space position of the current focus target (moons are nested in groups)
   _focusPos(out) {
     if (!this.focusBody) return out.copy(ORIGIN);
+    if (SCOPES[this.focusBody] && SCOPES[this.focusBody].model) return SCOPES[this.focusBody].model.getWorldPosition(out);
     const moonMesh = this.moonMeshes[this.focusBody]
       || (this.focusBody === 'iss' ? this.issDot : null)
       || (this.focusBody === 'moon' ? this.meshes.earth.children.find(c => c.userData.isMoon) : null);
@@ -3289,6 +3314,11 @@ function showBodyInfo(body, cardId, onClose) {
     rows = row('Distance from Earth', Math.round(m.r * AU_KM).toLocaleString() + ' km')
          + row('Diameter', '3,474 km') + row('Orbital period', '27.3 days');
     fact = 'The Moon drifts about 3.8 cm farther from Earth every year.';
+  } else if (SCOPES[body]) {
+    const s = SCOPES[body];
+    title = s.name; kind = s.kind;
+    rows = row('Operator', s.agency) + row('Launched', s.launched) + row('Orbit', s.orbitInfo);
+    fact = s.fact;
   } else {
     const meta = PLANET_META[body];
     title = body[0].toUpperCase() + body.slice(1);
@@ -3307,8 +3337,12 @@ function showBodyInfo(body, cardId, onClose) {
   }
   const xi = EXTRA_INFO[body];
   if (xi) rows += row('Surface gravity', xi.g) + row('Clocks vs Earth', xi.dil);
+  const link = SCOPES[body]?.url;
+  if (link) rows += `<div class="row clickable" data-link><span class="k">Images &amp; gallery</span><span class="v">Open ↗</span></div>`;
   card.innerHTML = `<button class="close">×</button><h3>${title}</h3><div class="kind">${kind}</div>${rows}<div class="fact">${fact}</div>`;
   card.querySelector('.close').onclick = () => { card.classList.remove('open'); if (onClose) onClose(); };
+  const linkRow = link && card.querySelector('[data-link]');
+  if (linkRow) linkRow.onclick = () => window.open(link, '_blank', 'noopener');
   card.classList.add('open');
 }
 const row = (k, v) => `<div class="row"><span class="k">${k}</span><span class="v">${v}</span></div>`;
