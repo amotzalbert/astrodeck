@@ -2105,8 +2105,7 @@ const Orrery = {
         } },
       { label: 'Gravity grid', get: () => this.showGrav, set: v => {
           this.showGrav = v;
-          this.gravGrid.visible = v;
-          for (const p of this.gravPatches) p.visible = v;
+          this._setGravVisible(v);
           if (v) this._gravT = null;                           // force a sheet rebuild now
         } },
       { label: 'Milky Way', get: () => this.showMW, set: v => { this.showMW = v; this.mwGroup.visible = v; } },
@@ -3432,22 +3431,44 @@ const Orrery = {
       for (let k = 0; k < SPOKES; k++) indices.push(idx(j, k), idx(j, k + 1));
     for (let j = 0; j < RINGS; j++)
       for (let k = 0; k < SPOKES; k += 2) indices.push(idx(j, k), idx(j + 1, k));
+    // triangle index for the translucent membrane surface (Layer B)
+    const tris = [];
+    for (let j = 0; j < RINGS; j++) for (let k = 0; k < SPOKES; k++) {
+      const a = idx(j, k), b = idx(j, k + 1), c = idx(j + 1, k + 1), d = idx(j + 1, k);
+      tris.push(a, b, d, b, c, d);
+    }
     const mat = new THREE.LineBasicMaterial({
-      vertexColors: true, transparent: true, opacity: 0.5,
+      vertexColors: true, transparent: true, opacity: 0.55,
       blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const makeSheet = (nodes, idxs) => {
+    const surfMat = new THREE.MeshBasicMaterial({
+      vertexColors: true, transparent: true, opacity: 0.17,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const makeSheet = (nodes, idxs, triIdxs) => {
+      const np = nodes.length / 2;
       const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nodes.length / 2 * 3), 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nodes.length / 2 * 3), 3));
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(np * 3), 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(np * 3), 3));
       geo.setIndex(idxs);
       const mesh = new THREE.LineSegments(geo, mat);
       mesh.userData.nodes = nodes;
+      mesh.userData.isGrav = true;
       mesh.visible = this.showGrav;
       this.scene.add(mesh);
+      if (triIdxs) {                                            // shared-vertex membrane surface
+        const sgeo = new THREE.BufferGeometry();
+        sgeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(np * 3), 3));
+        sgeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(np * 3), 3));
+        sgeo.setIndex(triIdxs);
+        const surf = new THREE.Mesh(sgeo, surfMat);
+        surf.userData.isGrav = true; surf.visible = this.showGrav;
+        this.scene.add(surf);
+        mesh.userData.surf = surf;
+      }
       return mesh;
     };
-    this.gravGrid = makeSheet(this._gravNodes, indices);
+    this.gravGrid = makeSheet(this._gravNodes, indices, tris);
     // Fine patches riding with each planet — crisp wells when zoomed in
     this.gravPatches = [];
     for (const name of PLANET_NAMES) {
@@ -3474,6 +3495,46 @@ const Orrery = {
       mesh.userData.planet = name;
       this.gravPatches.push(mesh);
     }
+    // Light pooling at the bottom of each well (Layer B)
+    this.gravPools = [];
+    const poolTex = glowTexture('rgba(160,130,255,0.9)', 'rgba(70,50,170,0)');
+    const sunPoolTex = glowTexture('rgba(255,225,150,0.95)', 'rgba(255,150,40,0)');
+    for (const wn of ['sun', ...PLANET_NAMES]) {
+      const isSun = wn === 'sun';
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: isSun ? sunPoolTex : poolTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+      spr.userData.well = wn; spr.userData.isGrav = true; spr.visible = this.showGrav;
+      this.scene.add(spr); this.gravPools.push(spr);
+    }
+    // Test-mass marbles riding the wells, each with a geodesic orbit trace (Layer A)
+    this.gravMarbles = [];
+    const marbleMat = new THREE.MeshBasicMaterial({ color: 0xffe6b0 });
+    for (const def of [{ r: 6, sp: 0.5, ph: 0 }, { r: 11, sp: 0.32, ph: 2.1 }, { r: 19, sp: 0.2, ph: 4.0 }, { r: 30, sp: 0.12, ph: 1.0 }]) {
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(0.44, 16, 16), marbleMat);
+      const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunPoolTex, color: 0xffcf78, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false }));
+      halo.scale.setScalar(2.4); ball.add(halo);                  // gold glow so the test mass pops
+      ball.userData.isGrav = true; ball.visible = this.showGrav; this.scene.add(ball);
+      const rv = []; for (let k = 0; k <= 72; k++) { const a = k / 72 * 2 * Math.PI; rv.push(new THREE.Vector3(Math.cos(a) * def.r, 0, Math.sin(a) * def.r)); }
+      const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(rv),
+        new THREE.LineBasicMaterial({ color: 0xffd27d, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+      ring.userData.isGrav = true; ring.visible = this.showGrav; this.scene.add(ring);
+      this.gravMarbles.push({ ball, ring, def, rv });
+    }
+  },
+
+  _setGravVisible(v) {
+    this.gravGrid.visible = v;
+    if (this.gravGrid.userData.surf) this.gravGrid.userData.surf.visible = v;
+    for (const p of this.gravPatches) p.visible = v;
+    if (this.gravPools) for (const s of this.gravPools) s.visible = v;
+    if (this.gravMarbles) for (const mb of this.gravMarbles) { mb.ball.visible = v; mb.ring.visible = v; }
+  },
+
+  // Summed (softened, log-scaled) well depth at (x,z) + a travelling ripple (Layer C)
+  _gravDepthAt(x, z, wells, ta) {
+    let raw = 0;
+    for (const w of wells) { const dx = x - w.x, dz = z - w.z; raw += w.m / Math.sqrt(dx * dx + dz * dz + w.e); }
+    const r = Math.sqrt(x * x + z * z);
+    return 3.2 * Math.log1p(8 * raw) + 0.2 * Math.sin(r * 0.5 - ta * 1.6) * Math.exp(-r * 0.045);
   },
 
   // Write positions + colors for one sheet; nodes are local polar (x,z) offsets from (cx,cz).
@@ -3484,6 +3545,7 @@ const Orrery = {
     const posA = mesh.geometry.attributes.position;
     const colA = mesh.geometry.attributes.color;
     const c0 = GRAV_C0, c1 = GRAV_C1, c2 = GRAV_C2, tmp = _gravTmpColor;
+    const ta = this._gravTa || 0;
     for (let i = 0, n = posA.count; i < n; i++) {
       const x = nodes[i * 2] + cx, z = nodes[i * 2 + 1] + cz;
       let raw = 0, tloc = 0;
@@ -3494,20 +3556,30 @@ const Orrery = {
         const nrm = g / w.peak;                                     // 1 at well centre → 0 far away
         if (nrm > tloc) tloc = nrm;
       }
-      const depth = 3.2 * Math.log1p(8 * raw);
+      const r = Math.sqrt(x * x + z * z);
+      const depth = 3.2 * Math.log1p(8 * raw) + 0.2 * Math.sin(r * 0.5 - ta * 1.6) * Math.exp(-r * 0.045);
       posA.setXYZ(i, x, -0.3 - depth, z);
       const t = Math.min(1, Math.pow(tloc, 0.6));                   // gamma lift: mid-well already colourful
       if (t < 0.5) tmp.lerpColors(c0, c1, t * 2); else tmp.lerpColors(c1, c2, (t - 0.5) * 2);
-      colA.setXYZ(i, tmp.r, tmp.g, tmp.b);
+      const band = 0.8 + 0.2 * Math.abs(Math.sin(depth * 1.5));     // faint topographic contour banding
+      colA.setXYZ(i, tmp.r * band, tmp.g * band, tmp.b * band);
     }
     posA.needsUpdate = true;
     colA.needsUpdate = true;
+    const surf = mesh.userData.surf;                                // mirror into the membrane surface
+    if (surf) {
+      const sp = surf.geometry.attributes.position, sc = surf.geometry.attributes.color;
+      sp.array.set(posA.array); sc.array.set(colA.array);
+      sp.needsUpdate = true; sc.needsUpdate = true;
+    }
   },
 
   updateGravityGrid() {
-    if (!this.gravGrid?.visible) return;
-    if (this._gravT === Sim.ms) return;                             // planets only move with sim time
-    this._gravT = Sim.ms;
+    if (!this.showGrav || !this.gravGrid) return;
+    const at = this._animMs || 0;                                   // animate continuously (ripples/marbles)
+    if (this._gravT === Sim.ms && at - (this._gravAt || 0) < 28) return;
+    this._gravT = Sim.ms; this._gravAt = at; this._gravTa = at / 1000;
+    const ta = this._gravTa;
     const wells = [{ x: 0, z: 0, m: 1.0, e: 2.4 * 2.4, peak: 1.0 / 2.4 }];
     for (const [name, m] of Object.entries(GRAV_MASS)) {
       const p = this.meshes[name].position;
@@ -3518,6 +3590,20 @@ const Orrery = {
     for (const patch of this.gravPatches) {
       const p = this.meshes[patch.userData.planet].position;
       this._fillGravSheet(patch, p.x, p.z, wells);
+    }
+    if (this.gravPools) for (const spr of this.gravPools) {          // light pooling at well bottoms
+      const wn = spr.userData.well; let x = 0, z = 0, m = 1.0;
+      if (wn !== 'sun') { const p = this.meshes[wn].position; x = p.x; z = p.z; m = GRAV_MASS[wn]; }
+      const d = this._gravDepthAt(x, z, wells, ta);
+      spr.position.set(x, -0.3 - d + 0.25, z);
+      spr.scale.setScalar(2.4 + m * (wn === 'sun' ? 5 : 14));
+    }
+    if (this.gravMarbles) for (const mb of this.gravMarbles) {       // test masses + draped geodesic traces
+      const a = mb.def.ph + ta * mb.def.sp, x = Math.cos(a) * mb.def.r, z = Math.sin(a) * mb.def.r;
+      mb.ball.position.set(x, -0.3 - this._gravDepthAt(x, z, wells, ta) + 0.14, z);
+      const rp = mb.ring.geometry.attributes.position;
+      for (let k = 0; k < mb.rv.length; k++) { const v = mb.rv[k]; rp.setXYZ(k, v.x, -0.3 - this._gravDepthAt(v.x, v.z, wells, ta) + 0.05, v.z); }
+      rp.needsUpdate = true;
     }
   },
 
