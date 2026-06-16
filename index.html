@@ -1697,6 +1697,9 @@ function eclToScene(p) {
 const ORIGIN = new THREE.Vector3();
 const _tmpV = new THREE.Vector3();
 const _tmpV2 = new THREE.Vector3();
+const _tmpQ = new THREE.Quaternion();
+const _tmpQ2 = new THREE.Quaternion();
+const _AXIS_X = new THREE.Vector3(1, 0, 0);
 const _lensNdc = new THREE.Vector2();
 const _starColor = new THREE.Color();
 // Device-orientation → camera (classic three.js DeviceOrientationControls math)
@@ -3287,44 +3290,125 @@ const Orrery = {
   },
 
   // LineSegments per planet, parented to the planet so they ride its orbit.
+  // Dynamic magnetosphere: solar-wind-shaped dipole (compressed dayside + magnetotail),
+  // particle flow along the field lines, latitude-graded colour + shimmering auroral
+  // poles, faint breathing magnetopause. Built in a canonical frame (Sun = +X) and
+  // re-oriented toward the Sun each frame in updateMagFields().
   addMagFields() {
     this.magFields = [];
+    this.magData = [];
+    const auroraTex = glowTexture('rgba(150,255,200,0.95)', 'rgba(40,170,100,0)');
     for (const [name, def] of Object.entries(MAG_FIELDS)) {
       const R = PLANET_META[name].size;
-      const pos = [], col = [];
-      const c = new THREE.Color(def.color);
-      def.shells.forEach((L, si) => {
-        const th0 = Math.asin(Math.sqrt(1 / L));
-        const fade = 1 - (si / def.shells.length) * 0.55;
+      const T = def.tilt * DEG, cosT = Math.cos(T), sinT = Math.sin(T);
+      const shells = def.shells, maxL = shells[shells.length - 1];
+      const poleCol = new THREE.Color(0xdffdf6), midCol = new THREE.Color(0x5eead4), equCol = new THREE.Color(def.color);
+      const shapePt = (v, L) => {                              // solar-wind deformation (Sun = +X)
+        if (v.x > 0) v.x *= 0.5;                               // dayside: compressed toward the planet
+        else { const f = Math.min(L / maxL, 1); v.x *= 1 + f * 1.9; v.y *= 1 - f * 0.5; v.z *= 1 - f * 0.5; }  // tail
+        return v;
+      };
+      const lines = [], pos = [], col = [], NS = 30;
+      shells.forEach((L) => {
+        const th0 = Math.asin(Math.min(0.999, Math.sqrt(1 / L)));
         for (let f = 0; f < 8; f++) {
           const phi = f * Math.PI / 4, cp = Math.cos(phi), sp = Math.sin(phi);
-          let prev = null;
-          for (let k = 0; k <= 28; k++) {
-            const th = th0 + (Math.PI - 2 * th0) * k / 28;
-            const r = L * Math.sin(th) ** 2 * R;
-            const p = [r * Math.sin(th) * cp, r * Math.cos(th), -r * Math.sin(th) * sp];
-            if (prev) {
-              pos.push(...prev, ...p);
-              col.push(c.r * fade, c.g * fade, c.b * fade, c.r * fade, c.g * fade, c.b * fade);
-            }
-            prev = p;
+          const poly = []; let prev = null, prevC = null;
+          for (let k = 0; k <= NS; k++) {
+            const th = th0 + (Math.PI - 2 * th0) * k / NS;
+            const r = L * Math.sin(th) ** 2;
+            const x = r * Math.sin(th) * cp, y = r * Math.cos(th), z = r * Math.sin(th) * sp;
+            const v = shapePt(new THREE.Vector3(x * cosT - y * sinT, x * sinT + y * cosT, z), L).multiplyScalar(R);
+            const w = Math.pow(Math.abs(Math.cos(th)), 1.3);   // 1 at the poles, 0 at the equator
+            const cc = equCol.clone().lerp(midCol, 0.55).lerp(poleCol, w);
+            const bright = 0.66 + 0.34 * w;
+            poly.push(v.clone());
+            if (prev) { pos.push(prev.x, prev.y, prev.z, v.x, v.y, v.z); col.push(prevC.r, prevC.g, prevC.b, cc.r * bright, cc.g * bright, cc.b * bright); }
+            prev = v; prevC = cc.clone().multiplyScalar(bright);
           }
+          lines.push(poly);
         }
       });
       const geo = new THREE.BufferGeometry();
       geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
       geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-      const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0.7,
-        blending: THREE.AdditiveBlending, depthWrite: false,
-      }));
-      const g = new THREE.Group();
-      g.rotation.z = def.tilt * DEG;
-      g.add(lines);
-      g.visible = this.showMag;
-      // Earth's field hangs off the real-axis spin group → true 23.4° + 11.5° dipole tilt
-      (name === 'earth' ? this.earthSpin : this.meshes[name]).add(g);
-      this.magFields.push(g);
+      const group = new THREE.Group();
+      group.add(new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false })));
+
+      // particle tracers riding the field lines
+      const lineLen = [];
+      for (const poly of lines) { const cum = [0]; for (let i = 1; i < poly.length; i++) cum[i] = cum[i - 1] + poly[i].distanceTo(poly[i - 1]); lineLen.push(cum); }
+      const tracers = [], PER = 4;
+      for (let li = 0; li < lines.length; li++) for (let p = 0; p < PER; p++) tracers.push({ line: li, phase: (p / PER + li * 0.13) % 1, speed: 0.16 + (li % 3) * 0.03 });
+      const pgeo = new THREE.BufferGeometry();
+      pgeo.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(tracers.length * 3), 3));
+      const particles = new THREE.Points(pgeo, new THREE.PointsMaterial({
+        size: R * 0.2, map: starSprite, color: 0xeafff9, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true }));
+      particles.frustumCulled = false; group.add(particles);
+
+      // auroral caps at the dipole poles
+      const auroras = [], axis = new THREE.Vector3(-sinT, cosT, 0);
+      for (const s of [1, -1]) {
+        const center = axis.clone().multiplyScalar(s * R * 1.02);
+        const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: auroraTex, color: 0x9effc8, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false }));
+        spr.position.copy(center); spr.scale.setScalar(R * 0.9); group.add(spr);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(R * 0.3, R * 0.045, 8, 24),
+          new THREE.MeshBasicMaterial({ color: 0x7cfcb0, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+        ring.position.copy(center); ring.lookAt(center.clone().multiplyScalar(2)); group.add(ring);
+        auroras.push({ spr, ring, phase: s > 0 ? 0 : Math.PI, base: R * 0.9 });
+      }
+
+      // faint breathing magnetopause boundary (teardrop, nose to the Sun at +X)
+      const boundary = new THREE.Group();
+      const bMat = new THREE.LineBasicMaterial({ color: def.color, transparent: true, opacity: 0.09, blending: THREE.AdditiveBlending, depthWrite: false });
+      const r0 = maxL * 1.15 * R;
+      for (const plane of ['xz', 'xy']) {
+        const bp = [];
+        for (let a = 0; a <= 64; a++) {
+          const ang = a / 64 * 2 * Math.PI;
+          const rad = Math.min(r0 * Math.pow(2 / (1 + Math.cos(ang)), 0.55), r0 * 3.4);
+          const cx = Math.cos(ang) * rad, sy = Math.sin(ang) * rad;
+          bp.push(plane === 'xz' ? new THREE.Vector3(cx, 0, sy) : new THREE.Vector3(cx, sy, 0));
+        }
+        boundary.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(bp), bMat));
+      }
+      group.add(boundary);
+
+      group.visible = this.showMag;
+      this.meshes[name].add(group);                            // parented to the planet node; oriented to Sun each frame
+      this.magFields.push(group);
+      this.magData.push({ name, group, lines, lineLen, tracers, particles, auroras, boundary });
+    }
+  },
+
+  updateMagFields() {
+    if (!this.magData || !this.showMag) return;
+    const t = (this._animMs || 0) / 1000;
+    for (const m of this.magData) {
+      if (!m.group.visible) continue;
+      const planet = this.meshes[m.name];
+      planet.getWorldPosition(_tmpV2);
+      _tmpV.copy(_tmpV2).negate();                             // direction to the Sun (origin)
+      if (_tmpV.lengthSq() < 1e-9) _tmpV.set(1, 0, 0); else _tmpV.normalize();
+      _tmpQ.setFromUnitVectors(_AXIS_X, _tmpV);                // world: dayside (+X) → Sun
+      planet.getWorldQuaternion(_tmpQ2);
+      m.group.quaternion.copy(_tmpQ2.invert()).multiply(_tmpQ);
+      const attr = m.particles.geometry.attributes.position;   // flow particles along the lines
+      for (let i = 0; i < m.tracers.length; i++) {
+        const tr = m.tracers[i], poly = m.lines[tr.line], cum = m.lineLen[tr.line];
+        const tot = cum[cum.length - 1] || 1e-3, d = ((tr.phase + t * tr.speed) % 1) * tot;
+        let j = 1; while (j < cum.length && cum[j] < d) j++;
+        const seg = (d - cum[j - 1]) / Math.max(1e-4, cum[j] - cum[j - 1]), a = poly[j - 1], b = poly[j];
+        attr.setXYZ(i, a.x + (b.x - a.x) * seg, a.y + (b.y - a.y) * seg, a.z + (b.z - a.z) * seg);
+      }
+      attr.needsUpdate = true;
+      for (const au of m.auroras) {                            // aurora shimmer
+        au.spr.material.opacity = Math.max(0.15, 0.45 + 0.3 * Math.sin(t * 3 + au.phase));
+        au.spr.scale.setScalar(au.base * (0.82 + 0.18 * Math.sin(t * 2.3 + au.phase)));
+        au.ring.material.opacity = 0.35 + 0.22 * Math.sin(t * 3 + au.phase + 1);
+      }
+      m.boundary.scale.setScalar(1 + 0.03 * Math.sin(t * 1.2));  // breathing
     }
   },
 
@@ -3524,6 +3608,7 @@ const Orrery = {
     this.updatePing();
     this._updateScaleExtras();
     this.updateGravityGrid();
+    this.updateMagFields();
     // Moons: real Kepler propagation, true direction, display-scaled radius
     for (const [mname, mdef] of Object.entries(MOONS)) {
       const el = mdef.el;
@@ -5717,6 +5802,7 @@ const Tour = (() => {
   function renderTick(t) {                                    // set full deterministic state for time t, render 1 frame
     for (let i = 1; i < EVENTS.length; i++) if (EVENTS[i].t <= t) { try { EVENTS[i].fn(); } catch (e) {} }
     Sim.ms = simAt(t);                                        // override any event time-pin
+    O._animMs = t;                                            // deterministic animation clock for mag-field flow
     try { updateClocks(performance.now()); } catch (e) {}     // tick the SIM clock (date rolls forward under the warp)
     setScaleMorph(morphAt(t)); O._applyScaleMorph();
     showCaps(t);
@@ -5741,6 +5827,7 @@ window.__astro = { Orrery, Sky, Sim, Tour, predictISSPasses, Missions, get Loc()
 
 function loop(now) {
   if (Tour.rendering) { requestAnimationFrame(loop); return; }   // offline render drives frames itself
+  Orrery._animMs = now || performance.now();                     // animation clock (mag-field flow, aurora)
   Sim.tick();
   Tour.tick(now || performance.now());
   Missions.update();
