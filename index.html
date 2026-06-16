@@ -3738,7 +3738,7 @@ const Orrery = {
   // Spacetime sheet: polar wireframe under the ecliptic, vertex depth from the
   // summed (softened, log-scaled) potential of Sun + planets. Wells track orbits.
   addGravityGrid() {
-    const SPOKES = 96, RINGS = 64, R0 = 1.6, R1 = 56;
+    const SPOKES = 96, RINGS = 64, R0 = 0.4, R1 = 56;          // small inner radius so the funnel closes to a tip (no dark central hole)
     this._gravNodes = new Float32Array((RINGS + 1) * SPOKES * 2);   // polar grid (x, z) pairs
     let n = 0;
     for (let j = 0; j <= RINGS; j++) {
@@ -3822,10 +3822,9 @@ const Orrery = {
     // Light pooling at the bottom of each well (Layer B)
     this.gravPools = [];
     const poolTex = glowTexture('rgba(160,130,255,0.9)', 'rgba(70,50,170,0)');
-    const sunPoolTex = glowTexture('rgba(255,225,150,0.95)', 'rgba(255,150,40,0)');
-    for (const wn of ['sun', ...PLANET_NAMES]) {
-      const isSun = wn === 'sun';
-      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: isSun ? sunPoolTex : poolTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const sunPoolTex = glowTexture('rgba(255,225,150,0.95)', 'rgba(255,150,40,0)');   // kept for marble halos
+    for (const wn of PLANET_NAMES) {                          // planet wells only — no detached orange orb under the Sun
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: poolTex, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false }));
       spr.userData.well = wn; spr.userData.isGrav = true; spr.visible = this.showGrav;
       this.scene.add(spr); this.gravPools.push(spr);
     }
