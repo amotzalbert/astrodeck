@@ -1009,7 +1009,7 @@
 </header>
 <div id="video-modal">
   <button id="video-close" title="Close (Esc)">✕</button>
-  <video id="tour-video" src="astrodeck-tour.mp4" controls playsinline preload="none"></video>
+  <video id="tour-video" src="astrodeck-tour-v2.mp4" controls playsinline preload="none"></video>
 </div>
 
 <main>
@@ -6317,6 +6317,11 @@ const Tour = (() => {
         pillHide('orrery-toggles'); pillHide('sky-toggles'); pillHide('time-bar');
         loadStarlinkCatalog(); O._starReady = false;
         loadSatGroup('nav'); loadSatGroup('geo'); loadSatGroup('debris');
+        // cinematic sun level — brighter than the UI default (37%) for video impact
+        const sv = 0.70;
+        if (O.sunLight) O.sunLight.intensity = 2600 * sv;
+        if (O.ambient) O.ambient.intensity = 2.2 * (0.35 + 0.65 * sv);
+        if (O.sunGlow) O.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * sv);
       } },
     { t: 22600, fn() {                                       // "roll the date forward": show time controls, run at 1 mo/s
         const tb = document.getElementById('time-bar'); if (tb) tb.classList.remove('collapsed');
@@ -6324,7 +6329,13 @@ const Tour = (() => {
       } },
     { t: 28000, fn() { O.setFocus('jupiter'); pillHide('time-bar'); Sim.speedIdx = 5; refreshSpeedUI(); } },
     { t: 38200, fn() { O.setFocus('saturn'); } },
-    { t: 49000, fn() { O.setFocus('earth'); O.showISS = true; } },
+    { t: 49000, fn() {
+        O.setFocus('earth'); O.showISS = true;
+        const sv = 0.40;
+        if (O.sunLight) O.sunLight.intensity = 2600 * sv;
+        if (O.ambient) O.ambient.intensity = 2.2 * (0.35 + 0.65 * sv);
+        if (O.sunGlow) O.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * sv);
+      } },
     { t: 59000, fn() {
         O.showStarlink = true; loadStarlinkCatalog(); O._starReady = false; O._applyStarlinkVis();
         for (const id of ['nav', 'geo', 'debris']) { O.satLayers[id].on = true; loadSatGroup(id); } O._applySatGroupVis();
@@ -6340,6 +6351,10 @@ const Tour = (() => {
         O.showMag = false; for (const g of O.magFields) g.visible = false;
         O.setFocus(null);
         O.showGrav = true; O.gravGrid.visible = true; for (const p of O.gravPatches) p.visible = true; O._gravT = null;
+        const sv = 0.70;
+        if (O.sunLight) O.sunLight.intensity = 2600 * sv;
+        if (O.ambient) O.ambient.intensity = 2.2 * (0.35 + 0.65 * sv);
+        if (O.sunGlow) O.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * sv);
       } },
     { t: 91600, fn() {
         O.showGrav = false; O.gravGrid.visible = false; for (const p of O.gravPatches) p.visible = false;
@@ -6532,6 +6547,19 @@ const Tour = (() => {
     O._animMs = t;                                            // deterministic animation clock for mag-field flow
     try { updateClocks(performance.now()); } catch (e) {}     // tick the SIM clock (date rolls forward under the warp)
     setScaleMorph(morphAt(t)); O._applyScaleMorph();
+    // Pre-sync planet mesh positions from current Sim.d so applyCam reads the correct
+    // world position — without this, at() returns the stale position from the previous
+    // O.update() call, which causes a rogue frame at hard cuts where sim time jumps
+    // (e.g. the time-warp reset at the Jupiter cut, t=28s).
+    { const d = Sim.d;
+      for (const name of PLANET_NAMES) {
+        const p = name === 'earth'
+          ? (s => ({ x: -s.x, y: -s.y, z: -s.z }))(sunGeo(d))
+          : helio(name, d);
+        O.meshes[name].position.copy(eclToScene(p));
+      }
+      try { O.updatePluto(d); } catch(e) {}
+    }
     showCaps(t);
     if (activeView === 'orrery') applyCam(t); else skyPan(t);
     O._starReady = false;                                     // force a FULL satellite repopulate this frame
