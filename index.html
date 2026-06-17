@@ -1474,6 +1474,31 @@ const TEXTURES = {
   saturnRing: TEX_PLANETS + 'saturnringcolor.jpg',
   uranus: TEX_PLANETS + 'uranusmap.jpg',
   neptune: TEX_PLANETS + 'neptunemap.jpg',
+  saturnRingPattern: TEX_PLANETS + 'saturnringpattern.gif',
+  uranusRing: TEX_PLANETS + 'uranusringcolour.jpg',
+  uranusRingTrans: TEX_PLANETS + 'uranusringtrans.gif',
+  pluto: TEX_PLANETS + 'plutomap1k.jpg',
+  plutoBump: TEX_PLANETS + 'plutobump1k.jpg',
+  moonHi: TEX_PLANETS + 'moonmap1k.jpg',
+  moonBump: TEX_PLANETS + 'moonbump1k.jpg',
+};
+// Per-planet surface relief (bump maps) + atmospheric limb glow. Gas giants have
+// no bump map (fluid); rocky bodies get crater/terrain relief.
+const PLANET_FX = {
+  mercury: { bump: TEX_PLANETS + 'mercurybump.jpg', bumpScale: 0.016 },
+  venus:   { bump: TEX_PLANETS + 'venusbump.jpg',   bumpScale: 0.010, atmo: { color: 0xf3e2b0, power: 2.6, intensity: 0.95, scale: 1.045 } },
+  mars:    { bump: TEX_PLANETS + 'marsbump1k.jpg',  bumpScale: 0.022, atmo: { color: 0xff9c66, power: 4.2, intensity: 0.40, scale: 1.022 } },
+  jupiter: { atmo: { color: 0xe7cda0, power: 4.4, intensity: 0.45, scale: 1.016 } },
+  saturn:  { atmo: { color: 0xe9d9a8, power: 4.4, intensity: 0.40, scale: 1.016 } },
+  uranus:  { atmo: { color: 0xb6eef2, power: 3.4, intensity: 0.60, scale: 1.032 } },
+  neptune: { atmo: { color: 0x6f97ff, power: 3.4, intensity: 0.70, scale: 1.032 } },
+};
+// Extra Earth maps for the photoreal globe (ocean gloss, relief, clouds, city lights).
+const EARTH_MAPS = {
+  normal:   TEX_THREE + 'earth_normal_2048.jpg',
+  specular: TEX_THREE + 'earth_specular_2048.jpg',
+  clouds:   TEX_THREE + 'earth_clouds_2048.png',
+  lights:   TEX_THREE + 'earth_lights_2048.png',
 };
 const texLoader = new THREE.TextureLoader();
 texLoader.setCrossOrigin('anonymous');
@@ -1485,6 +1510,73 @@ function applyTexture(mat, url) {
     mat.color.set(0xffffff);                                 // stop tinting once the real map is on
     mat.needsUpdate = true;
   });
+}
+
+// Soft view-dependent atmosphere/limb glow — a back-side fresnel shell. Reusable
+// across planets; returns the mesh so callers can tweak/animate it.
+function addAtmosphere(parent, radius, colorHex, opts = {}) {
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
+    uniforms: {
+      uColor: { value: new THREE.Color(colorHex) },
+      uPower: { value: opts.power ?? 3.2 },
+      uIntensity: { value: opts.intensity ?? 1.0 },
+    },
+    vertexShader: `varying vec3 vN; varying vec3 vP;
+      void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position,1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform vec3 uColor; uniform float uPower; uniform float uIntensity; varying vec3 vN; varying vec3 vP;
+      void main(){ vec3 V = normalize(-vP); float f = pow(1.0 - max(dot(vN, V), 0.0), uPower); gl_FragColor = vec4(uColor, f * uIntensity); }`,
+  });
+  const m = new THREE.Mesh(new THREE.SphereGeometry(radius * (opts.scale ?? 1.022), 48, 48), mat);
+  m.renderOrder = 2;
+  parent.add(m);
+  return m;
+}
+
+// Add surface relief to a planet material from a grayscale bump map.
+function applyBump(mat, url, scale) {
+  texLoader.load(url, t => {
+    t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4;
+    mat.bumpMap = t; mat.bumpScale = scale; mat.needsUpdate = true;
+  });
+}
+
+// Living solar photosphere: domain-warped fbm granulation that churns over time,
+// modulated by the real sun map, with bright flares + limb darkening. Driven by a
+// uTime uniform (set from the deterministic anim clock so offline renders move too).
+function makeSunMaterial() {
+  const uni = { uTime: { value: 0 }, uMap: { value: null }, uHasMap: { value: 0 } };
+  const mat = new THREE.ShaderMaterial({
+    uniforms: uni,
+    vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+      void main(){ vUv=uv; vN=normalize(normalMatrix*normal); vec4 mv=modelViewMatrix*vec4(position,1.0); vP=mv.xyz; gl_Position=projectionMatrix*mv; }`,
+    fragmentShader: `precision highp float;
+      varying vec2 vUv; varying vec3 vN; varying vec3 vP;
+      uniform float uTime; uniform sampler2D uMap; uniform float uHasMap;
+      float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+      float noise(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
+        float a=hash(i),b=hash(i+vec2(1.,0.)),c=hash(i+vec2(0.,1.)),d=hash(i+vec2(1.,1.));
+        return mix(mix(a,b,f.x),mix(c,d,f.x),f.y); }
+      float fbm(vec2 p){ float v=0.,a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p=p*2.03+vec2(1.7,9.2); a*=0.5; } return v; }
+      void main(){
+        float t=uTime*0.05;
+        vec2 warp=vec2(fbm(vUv*4.0+vec2(t,0.0)), fbm(vUv*4.0+vec2(0.0,-t)));
+        float cells=fbm(vUv*9.0+warp*1.5+vec2(-t*0.6,t*0.4));
+        float fine =fbm(vUv*22.0-warp*2.0+vec2(t*0.8,0.0));
+        float m=uHasMap>0.5 ? texture2D(uMap, vUv+warp*0.02).r : 0.5;
+        float h=clamp(cells*0.72+fine*0.30+m*0.30, 0.0, 1.0);
+        vec3 cCool=vec3(0.50,0.08,0.015), cMid=vec3(1.0,0.36,0.05), cHot=vec3(1.0,0.82,0.42);
+        vec3 col=mix(cCool,cMid,smoothstep(0.14,0.50,h));
+        col=mix(col,cHot,smoothstep(0.62,0.98,h));
+        float fl=pow(max(fine-0.66,0.0)*3.0,2.0); col+=cHot*fl*0.7;   // flare sparkle
+        float ld=pow(max(dot(normalize(vN),normalize(-vP)),0.0),0.42); // limb darkening
+        col*=mix(0.5,1.18,ld);
+        gl_FragColor=vec4(col,1.0);
+      }`,
+  });
+  mat.userData.uniforms = uni;
+  texLoader.load(TEXTURES.sun, t => { t.colorSpace = THREE.SRGBColorSpace; uni.uMap.value = t; uni.uHasMap.value = 1; mat.needsUpdate = true; });
+  return mat;
 }
 
 function makeLabel(text, cls) {
@@ -2224,17 +2316,26 @@ const Orrery = {
 
     // Sun
     const sun = new THREE.Mesh(
-      new THREE.SphereGeometry(2.6, 48, 48),
-      new THREE.MeshBasicMaterial({ color: 0xffd27d })
+      new THREE.SphereGeometry(2.6, 96, 96),
+      makeSunMaterial()
     );
-    applyTexture(sun.material, TEXTURES.sun);
     this.sunMesh = sun;
-    const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: glowTexture('rgba(255,200,90,0.9)', 'rgba(255,140,40,0)'),
-      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    }));
-    sunGlow.scale.setScalar(9);
-    sun.add(sunGlow);
+    this.sunMat = sun.material;
+    // Layered soft corona: stacked additive radial glows that fade smoothly into
+    // space (a single fresnel shell reads as a hard ring, so we avoid that here).
+    const corona = [
+      { c0: 'rgba(255,210,120,0.85)', c1: 'rgba(255,150,50,0)', s: 8.5 },
+      { c0: 'rgba(255,150,60,0.45)',  c1: 'rgba(255,90,30,0)',  s: 15 },
+      { c0: 'rgba(255,90,30,0.22)',   c1: 'rgba(255,60,10,0)',  s: 26 },
+    ];
+    for (const g of corona) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture(g.c0, g.c1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+      }));
+      sp.scale.setScalar(g.s);
+      sun.add(sp);
+    }
+    const sunGlow = sun.children[0];                          // keep a handle for true-scale tweaks
     sun.add(makeLabel('Sun', 'planet'));
     sun.userData.body = 'sun';
     this.scene.add(sun);
@@ -2255,7 +2356,7 @@ const Orrery = {
         new THREE.MeshStandardMaterial({ color: meta.color, roughness: 0.7, metalness: 0.05 })
       );
       mesh.userData.body = name;
-      if (TEXTURES[name]) applyTexture(mesh.material, TEXTURES[name]);
+      if (TEXTURES[name] && name !== 'earth') applyTexture(mesh.material, TEXTURES[name]);  // earth albedo handled in _enhanceEarth
       let node = mesh;                                       // what gets positioned in the scene
       if (name === 'saturn') {
         const ringGeo = new THREE.RingGeometry(meta.size * 1.45, meta.size * 2.3, 96);
@@ -2265,12 +2366,30 @@ const Orrery = {
           v3.fromBufferAttribute(rp, k);
           ruv.setXY(k, (v3.length() - meta.size * 1.45) / (meta.size * 0.85), 0.5);
         }
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 1, alphaTest: 0.02 });
         applyTexture(ringMat, TEXTURES.saturnRing);
+        texLoader.load(TEXTURES.saturnRingPattern, t => {  // transparency strip → Cassini gaps
+          t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4; ringMat.alphaMap = t; ringMat.needsUpdate = true;
+        });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = Math.PI / 2 - 0.45;
         mesh.add(ring);
         this.saturnRing = ring;
+      }
+      if (name === 'uranus') {                                // faint, near-vertical ring system
+        const ringGeo = new THREE.RingGeometry(meta.size * 1.4, meta.size * 1.95, 96);
+        const rp = ringGeo.attributes.position, ruv = ringGeo.attributes.uv, v3 = new THREE.Vector3();
+        for (let k = 0; k < rp.count; k++) {
+          v3.fromBufferAttribute(rp, k);
+          ruv.setXY(k, (v3.length() - meta.size * 1.4) / (meta.size * 0.55), 0.5);
+        }
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0x9fb8c4, side: THREE.DoubleSide, transparent: true, opacity: 0.55, alphaTest: 0.02 });
+        applyTexture(ringMat, TEXTURES.uranusRing);
+        texLoader.load(TEXTURES.uranusRingTrans, t => { t.colorSpace = THREE.NoColorSpace; ringMat.alphaMap = t; ringMat.needsUpdate = true; });
+        const ring = new THREE.Mesh(ringGeo, ringMat);
+        ring.rotation.y = Math.PI / 2 - 0.15;                 // Uranus is tipped ~98°: rings ride nearly upright
+        mesh.add(ring);
+        this.uranusRing = ring;
       }
       const systemMoons = Object.entries(MOONS).filter(([, m]) => m.planet === name);
       if (systemMoons.length) {
@@ -2302,11 +2421,13 @@ const Orrery = {
         this.homeDot = dot;
         mesh.add(dot);                                       // rides on the spinning globe
         this.earthSpin = mesh;
+        this._enhanceEarth(mesh);
         const moon = new THREE.Mesh(
           new THREE.SphereGeometry(0.16, 24, 24),
           new THREE.MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.9 })
         );
-        applyTexture(moon.material, TEXTURES.moon);
+        applyTexture(moon.material, TEXTURES.moonHi);
+        applyBump(moon.material, TEXTURES.moonBump, 0.004);
         moon.userData.isMoon = true;
         moon.userData.body = 'moon';
         const moonLabel = makeLabel('Moon', 'moon-label');
@@ -2316,6 +2437,11 @@ const Orrery = {
         node.add(moon);
         this.clickables.push(moon);
         this.earthMoonLabel = moonLabel;
+      }
+      const fx = PLANET_FX[name];                             // bump relief + atmosphere (earth handled separately)
+      if (fx) {
+        if (fx.bump) applyBump(mesh.material, fx.bump, fx.bumpScale);
+        if (fx.atmo) addAtmosphere(mesh, meta.size, fx.atmo.color, fx.atmo);
       }
       const label = makeLabel(name[0].toUpperCase() + name.slice(1), 'planet');
       node.add(label);
@@ -2523,15 +2649,16 @@ const Orrery = {
     const dimmer = document.createElement('div');
     dimmer.className = 'dimmer-pill';
     dimmer.title = 'Sun light intensity';
-    dimmer.innerHTML = `<span class="ico">☀</span><input type="range" min="0" max="200" value="100"><span class="val">100%</span>`;
+    dimmer.innerHTML = `<span class="ico">☀</span><input type="range" min="0" max="200" value="80"><span class="val">80%</span>`;
     const slider = dimmer.querySelector('input'), valEl = dimmer.querySelector('.val');
-    slider.addEventListener('input', () => {
-      const v = slider.value / 100;
+    const applySunDim = v => {
       this.sunLight.intensity = 2600 * v;
       this.ambient.intensity = 2.2 * (0.35 + 0.65 * v);     // keep night sides faintly readable
       this.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * v);
-      valEl.textContent = slider.value + '%';
-    });
+      valEl.textContent = Math.round(v * 100) + '%';
+    };
+    slider.addEventListener('input', () => applySunDim(slider.value / 100));
+    applySunDim(0.8);
     document.getElementById('orrery-toggles').appendChild(dimmer);
 
     // Milky Way brightness dimmer
@@ -3153,9 +3280,12 @@ const Orrery = {
 
   addPluto() {
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, 20, 20),
+      new THREE.SphereGeometry(0.16, 32, 32),
       new THREE.MeshStandardMaterial({ color: 0xc2a17d, roughness: 0.92, metalness: 0.02, emissive: 0x271c12 })
     );
+    applyTexture(mesh.material, TEXTURES.pluto);
+    applyBump(mesh.material, TEXTURES.plutoBump, 0.006);
+    addAtmosphere(mesh, 0.16, 0xbcd2ff, { power: 3.0, intensity: 0.4, scale: 1.05 });  // thin haze
     mesh.userData.body = 'pluto';
     mesh.visible = this.showPluto;
     const label = makeLabel('Pluto', 'planet');
@@ -3978,6 +4108,90 @@ const Orrery = {
     return out.copy(this.meshes[this.focusBody].position);
   },
 
+  // Upgrade the plain Earth globe to a photoreal one: glossy oceans (sun glint),
+  // terrain relief, an independent cloud shell, dark-side city lights, atmosphere.
+  _enhanceEarth(mesh) {
+    const R = PLANET_META.earth.size, mat = mesh.material;
+    mat.roughness = 1.0; mat.metalness = 0.0;                 // base; maps below sculpt oceans vs land
+
+    // Albedo with baked-in contrast (an S-curve + slight darken) so the sunlit
+    // face reads punchy instead of washed-out under the bright point light.
+    texLoader.load(TEXTURES.earth, t => {
+      const img = t.image, c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+      const id = g.getImageData(0, 0, c.width, c.height), px = id.data, K = 1.42, B = 0.82;
+      for (let i = 0; i < px.length; i += 4) for (let k = 0; k < 3; k++) {
+        let v = ((px[i + k] - 128) * K + 128) * B; px[i + k] = v < 0 ? 0 : v > 255 ? 255 : v;
+      }
+      g.putImageData(id, 0, 0);
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+      mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
+    });
+
+    // Terrain relief.
+    texLoader.load(EARTH_MAPS.normal, t => {
+      t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4;
+      mat.normalMap = t; mat.normalScale = new THREE.Vector2(0.6, 0.6); mat.needsUpdate = true;
+    });
+
+    // Ocean gloss: the specular mask is white over water, black over land. Invert
+    // (and compress) into a roughness map so seas are glossy (~0.15) and land matte;
+    // reuse the raw mask as a metalness map so only water catches a real sun glint.
+    texLoader.load(EARTH_MAPS.specular, t => {
+      const img = t.image, c = document.createElement('canvas');
+      c.width = img.width; c.height = img.height;
+      const g = c.getContext('2d'); g.drawImage(img, 0, 0);
+      const id = g.getImageData(0, 0, c.width, c.height), px = id.data;
+      for (let i = 0; i < px.length; i += 4) { const v = 255 - Math.round(px[i] * 0.78); px[i] = px[i + 1] = px[i + 2] = v; }
+      g.putImageData(id, 0, 0);
+      const rough = new THREE.CanvasTexture(c);
+      rough.colorSpace = THREE.NoColorSpace; rough.anisotropy = 4;
+      mat.roughnessMap = rough;
+      t.colorSpace = THREE.NoColorSpace; mat.metalnessMap = t; mat.metalness = 0.12;
+      mat.needsUpdate = true;
+    });
+
+    // City lights, masked to the night side via the live sun direction (view space).
+    this.earthUniforms = { uSunViewDir: { value: new THREE.Vector3(0, 0, 1) } };
+    mat.onBeforeCompile = shader => {
+      shader.uniforms.uSunViewDir = this.earthUniforms.uSunViewDir;
+      shader.fragmentShader = 'uniform vec3 uSunViewDir;\n' + shader.fragmentShader.replace(
+        '#include <emissivemap_fragment>',
+        `#include <emissivemap_fragment>
+         float nightF = smoothstep(0.12, -0.22, dot(normalize(normal), normalize(uSunViewDir)));
+         totalEmissiveRadiance *= nightF;`
+      );
+    };
+    texLoader.load(EARTH_MAPS.lights, t => {
+      t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+      mat.emissive = new THREE.Color(0xffe8c2); mat.emissiveMap = t; mat.emissiveIntensity = 3.2;
+      mat.needsUpdate = true;
+    });
+
+    // Independent cloud shell (drifts slowly relative to the globe).
+    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xeef2f6, transparent: true, depthWrite: false, roughness: 1, metalness: 0, opacity: 0.6 });
+    texLoader.load(EARTH_MAPS.clouds, t => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; cloudMat.alphaMap = t; cloudMat.needsUpdate = true; });
+    const clouds = new THREE.Mesh(new THREE.SphereGeometry(R * 1.012, 48, 48), cloudMat);
+    clouds.renderOrder = 1;
+    mesh.add(clouds);
+    this.earthClouds = clouds;
+
+    // Blue atmospheric limb glow — a soft rim hugging the globe (not a hard ring).
+    addAtmosphere(mesh, R, 0x9cc8ff, { power: 4.0, intensity: 0.55, scale: 1.02 });
+  },
+
+  // Per-frame Earth FX: drift the clouds and feed the night-side shader the sun dir.
+  _updateEarthFX() {
+    if (this.earthClouds) this.earthClouds.rotation.y = (this._animMs || 0) / 1000 * 0.006;
+    if (this.earthUniforms && this.meshes.earth) {
+      const dir = this.meshes.earth.getWorldPosition(_tmpV).multiplyScalar(-1).normalize();
+      dir.transformDirection(this.camera.matrixWorldInverse);  // toward Sun (origin), in view space
+      this.earthUniforms.uSunViewDir.value.copy(dir);
+    }
+  },
+
   // Orient the textured globe so Greenwich faces RA = GMST (true rotation +
   // 23.4° axial tilt), then pin the home marker at the saved lat/lon.
   orientEarth(d) {
@@ -4022,10 +4236,11 @@ const Orrery = {
         : helio(name, d);
       this._helioR[name] = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
       this.meshes[name].position.copy(eclToScene(p));
-      if (name === 'earth') this.orientEarth(d);
+      if (name === 'earth') { this.orientEarth(d); this._updateEarthFX(); }
       else (this.spinMeshes[name] || this.meshes[name]).rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
     }
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
+    if (this.sunMat) this.sunMat.userData.uniforms.uTime.value = (this._animMs || 0) / 1000;
     if (this.kuiperPoints) this.kuiperPoints.rotation.y = -rev(d * 360 / 99400) * DEG;  // belt drift, ~272-yr orbit @42 AU
     this.updateISS(d);
     this.updateSats(d);
