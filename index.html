@@ -2649,7 +2649,7 @@ const Orrery = {
     const dimmer = document.createElement('div');
     dimmer.className = 'dimmer-pill';
     dimmer.title = 'Sun light intensity';
-    dimmer.innerHTML = `<span class="ico">☀</span><input type="range" min="0" max="200" value="80"><span class="val">80%</span>`;
+    dimmer.innerHTML = `<span class="ico">☀</span><input type="range" min="0" max="200" value="37"><span class="val">37%</span>`;
     const slider = dimmer.querySelector('input'), valEl = dimmer.querySelector('.val');
     const applySunDim = v => {
       this.sunLight.intensity = 2600 * v;
@@ -2658,19 +2658,20 @@ const Orrery = {
       valEl.textContent = Math.round(v * 100) + '%';
     };
     slider.addEventListener('input', () => applySunDim(slider.value / 100));
-    applySunDim(0.8);
+    applySunDim(0.37);
     document.getElementById('orrery-toggles').appendChild(dimmer);
 
     // Milky Way brightness dimmer
     const mwDim = document.createElement('div');
     mwDim.className = 'dimmer-pill';
     mwDim.title = 'Milky Way brightness';
-    mwDim.innerHTML = `<span class="ico">🌌</span><input type="range" min="0" max="200" value="100"><span class="val">100%</span>`;
+    mwDim.innerHTML = `<span class="ico">🌌</span><input type="range" min="0" max="200" value="55"><span class="val">55%</span>`;
     const mwSlider = mwDim.querySelector('input'), mwVal = mwDim.querySelector('.val');
     mwSlider.addEventListener('input', () => {
       this.setMWBrightness(mwSlider.value / 100);
       mwVal.textContent = mwSlider.value + '%';
     });
+    this.setMWBrightness(0.55);
     document.getElementById('orrery-toggles').appendChild(mwDim);
   },
 
