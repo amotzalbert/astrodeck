@@ -1477,8 +1477,7 @@ const TEXTURES = {
   saturnRingPattern: TEX_PLANETS + 'saturnringpattern.gif',
   uranusRing: TEX_PLANETS + 'uranusringcolour.jpg',
   uranusRingTrans: TEX_PLANETS + 'uranusringtrans.gif',
-  pluto: TEX_PLANETS + 'plutomap1k.jpg',
-  plutoBump: TEX_PLANETS + 'plutobump1k.jpg',
+  pluto: 'pluto_nh.jpg',                                   // NASA/JHUAPL/SwRI New Horizons 2015 global color mosaic (2k)
   moonHi: TEX_PLANETS + 'moonmap1k.jpg',
   moonBump: TEX_PLANETS + 'moonbump1k.jpg',
 };
@@ -2285,7 +2284,7 @@ const RadioSFX = (() => {
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: false, showMarbles: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: true, showMarbles: false,
   trueTarget: 0, _helioR: {}, _orbitRaw: {}, starlinkStyle: 'dots',
 
   init() {
@@ -3287,12 +3286,11 @@ const Orrery = {
 
   addPluto() {
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, 32, 32),
-      new THREE.MeshStandardMaterial({ color: 0xc2a17d, roughness: 0.92, metalness: 0.02, emissive: 0x271c12 })
+      new THREE.SphereGeometry(0.16, 48, 48),
+      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.0, emissive: 0x1a1410, emissiveIntensity: 0.5 })
     );
-    applyTexture(mesh.material, TEXTURES.pluto);
-    applyBump(mesh.material, TEXTURES.plutoBump, 0.006);
-    addAtmosphere(mesh, 0.16, 0xbcd2ff, { power: 3.0, intensity: 0.4, scale: 1.05 });  // thin haze
+    applyTexture(mesh.material, TEXTURES.pluto);                                 // New Horizons global color mosaic
+    addAtmosphere(mesh, 0.16, 0xbcd2ff, { power: 3.0, intensity: 0.4, scale: 1.05 });  // thin nitrogen haze
     mesh.userData.body = 'pluto';
     mesh.visible = this.showPluto;
     const label = makeLabel('Pluto', 'planet');
@@ -3317,7 +3315,8 @@ const Orrery = {
     const mesh = this.meshes.pluto;
     mesh.visible = this.showPluto;
     if (mesh.userData.label) mesh.userData.label.visible = this.showPluto;
-    if (this.plutoOrbit) this.plutoOrbit.visible = this.showPluto && this.showOrbits;
+    // Orbit shows when Pluto is selected (even if global orbit paths are off), or with the global toggle
+    if (this.plutoOrbit) this.plutoOrbit.visible = this.showPluto && (this.focusBody === 'pluto' || this.showOrbits);
     if (!this.showPluto) return;
     const E = solveKepler(rev(PLUTO.n * (d - PLUTO.dPeri)), PLUTO.e);
     const p = this._plutoPosFromE(E);
