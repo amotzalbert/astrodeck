@@ -1009,7 +1009,7 @@
 </header>
 <div id="video-modal">
   <button id="video-close" title="Close (Esc)">✕</button>
-  <video id="tour-video" src="astrodeck-tour-v2.mp4" controls playsinline preload="none"></video>
+  <video id="tour-video" src="astrodeck-tour.mp4" controls playsinline preload="none"></video>
 </div>
 
 <main>
@@ -1382,6 +1382,38 @@ function bodyAltAzAt(name, jd, latDeg, lonDeg) {
   return { alt, az: (az + 360) % 360 };
 }
 
+// Alt/az of a fixed-sky point (meteor radiant), RA/Dec in J2000 degrees
+function radiantAltAz(raDeg, decDeg, jd, latDeg, lonDeg) {
+  const H = lstRad(jd, lonDeg) - raDeg * DEG, phi = latDeg * DEG, dec = decDeg * DEG;
+  const sd = Math.sin(dec), cd = Math.cos(dec), ch = Math.cos(H);
+  const alt = Math.asin(Math.sin(phi) * sd + Math.cos(phi) * cd * ch) / DEG;
+  const az = Math.atan2(-cd * Math.sin(H), Math.cos(phi) * sd - Math.sin(phi) * cd * ch) / DEG;
+  return { alt, az: (az + 360) % 360 };
+}
+
+// Major annual meteor showers — IMO averages. Radiant RA/Dec J2000; zhr = peak rate.
+const METEOR_SHOWERS = [
+  { name: 'Quadrantids',     start: [12, 28], end: [1, 12],  peak: [1, 3],   ra: 230, dec: 49,  zhr: 110 },
+  { name: 'Lyrids',          start: [4, 16],  end: [4, 25],  peak: [4, 22],  ra: 271, dec: 34,  zhr: 18 },
+  { name: 'Eta Aquariids',   start: [4, 19],  end: [5, 28],  peak: [5, 6],   ra: 338, dec: -1,  zhr: 50 },
+  { name: 'Delta Aquariids', start: [7, 12],  end: [8, 23],  peak: [7, 30],  ra: 340, dec: -16, zhr: 25 },
+  { name: 'Perseids',        start: [7, 17],  end: [8, 24],  peak: [8, 12],  ra: 48,  dec: 58,  zhr: 100 },
+  { name: 'Orionids',        start: [10, 2],  end: [11, 7],  peak: [10, 21], ra: 95,  dec: 16,  zhr: 20 },
+  { name: 'Leonids',         start: [11, 6],  end: [11, 30], peak: [11, 17], ra: 152, dec: 22,  zhr: 15 },
+  { name: 'Geminids',        start: [12, 4],  end: [12, 17], peak: [12, 14], ra: 112, dec: 33,  zhr: 150 },
+];
+const _DOY_CUM = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+const doyOf = (m, d) => _DOY_CUM[m - 1] + d;
+// Is the shower active on `date`, and how many days until its peak (signed, nearest occurrence)?
+function showerStatus(sh, date) {
+  const md = (date.getMonth() + 1) * 100 + date.getDate();
+  const s = sh.start[0] * 100 + sh.start[1], e = sh.end[0] * 100 + sh.end[1];
+  const active = s <= e ? (md >= s && md <= e) : (md >= s || md <= e);   // handles Dec→Jan wrap
+  let diff = doyOf(sh.peak[0], sh.peak[1]) - doyOf(date.getMonth() + 1, date.getDate());
+  if (diff > 183) diff -= 365; else if (diff < -183) diff += 365;
+  return { active, diff };
+}
+
 /* =====================================================================
    TIME ENGINE + LOCATION
    ===================================================================== */
@@ -1474,30 +1506,6 @@ const TEXTURES = {
   saturnRing: TEX_PLANETS + 'saturnringcolor.jpg',
   uranus: TEX_PLANETS + 'uranusmap.jpg',
   neptune: TEX_PLANETS + 'neptunemap.jpg',
-  saturnRingPattern: TEX_PLANETS + 'saturnringpattern.gif',
-  uranusRing: TEX_PLANETS + 'uranusringcolour.jpg',
-  uranusRingTrans: TEX_PLANETS + 'uranusringtrans.gif',
-  pluto: 'pluto_nh.jpg',                                   // NASA/JHUAPL/SwRI New Horizons 2015 global color mosaic (2k)
-  moonHi: TEX_PLANETS + 'moonmap1k.jpg',
-  moonBump: TEX_PLANETS + 'moonbump1k.jpg',
-};
-// Per-planet surface relief (bump maps) + atmospheric limb glow. Gas giants have
-// no bump map (fluid); rocky bodies get crater/terrain relief.
-const PLANET_FX = {
-  mercury: { bump: TEX_PLANETS + 'mercurybump.jpg', bumpScale: 0.016 },
-  venus:   { bump: TEX_PLANETS + 'venusbump.jpg',   bumpScale: 0.010, atmo: { color: 0xf3e2b0, power: 2.6, intensity: 0.95, scale: 1.045 } },
-  mars:    { bump: TEX_PLANETS + 'marsbump1k.jpg',  bumpScale: 0.022, atmo: { color: 0xff9c66, power: 4.2, intensity: 0.40, scale: 1.022 } },
-  jupiter: { atmo: { color: 0xe7cda0, power: 4.4, intensity: 0.45, scale: 1.016 } },
-  saturn:  { atmo: { color: 0xe9d9a8, power: 4.4, intensity: 0.40, scale: 1.016 } },
-  uranus:  { atmo: { color: 0xb6eef2, power: 3.4, intensity: 0.60, scale: 1.032 } },
-  neptune: { atmo: { color: 0x6f97ff, power: 3.4, intensity: 0.70, scale: 1.032 } },
-};
-// Extra Earth maps for the photoreal globe (ocean gloss, relief, clouds, city lights).
-const EARTH_MAPS = {
-  normal:   TEX_THREE + 'earth_normal_2048.jpg',
-  specular: TEX_THREE + 'earth_specular_2048.jpg',
-  clouds:   TEX_THREE + 'earth_clouds_2048.png',
-  lights:   TEX_THREE + 'earth_lights_2048.png',
 };
 const texLoader = new THREE.TextureLoader();
 texLoader.setCrossOrigin('anonymous');
@@ -1509,79 +1517,6 @@ function applyTexture(mat, url) {
     mat.color.set(0xffffff);                                 // stop tinting once the real map is on
     mat.needsUpdate = true;
   });
-}
-
-// Soft view-dependent atmosphere/limb glow — a back-side fresnel shell. Reusable
-// across planets; returns the mesh so callers can tweak/animate it.
-function addAtmosphere(parent, radius, colorHex, opts = {}) {
-  const mat = new THREE.ShaderMaterial({
-    transparent: true, blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
-    uniforms: {
-      uColor: { value: new THREE.Color(colorHex) },
-      uPower: { value: opts.power ?? 3.2 },
-      uIntensity: { value: opts.intensity ?? 1.0 },
-    },
-    vertexShader: `varying vec3 vN; varying vec3 vP;
-      void main(){ vN = normalize(normalMatrix * normal); vec4 mv = modelViewMatrix * vec4(position,1.0); vP = mv.xyz; gl_Position = projectionMatrix * mv; }`,
-    fragmentShader: `uniform vec3 uColor; uniform float uPower; uniform float uIntensity; varying vec3 vN; varying vec3 vP;
-      void main(){ vec3 V = normalize(-vP); float f = pow(1.0 - max(dot(vN, V), 0.0), uPower); gl_FragColor = vec4(uColor, f * uIntensity); }`,
-  });
-  const m = new THREE.Mesh(new THREE.SphereGeometry(radius * (opts.scale ?? 1.022), 48, 48), mat);
-  m.renderOrder = 2;
-  parent.add(m);
-  return m;
-}
-
-// Add surface relief to a planet material from a grayscale bump map.
-function applyBump(mat, url, scale) {
-  texLoader.load(url, t => {
-    t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4;
-    mat.bumpMap = t; mat.bumpScale = scale; mat.needsUpdate = true;
-  });
-}
-
-// Living solar photosphere: domain-warped fbm granulation that churns over time,
-// modulated by the real sun map, with bright flares + limb darkening. Driven by a
-// uTime uniform (set from the deterministic anim clock so offline renders move too).
-function makeSunMaterial() {
-  const uni = { uTime: { value: 0 }, uMap: { value: null }, uHasMap: { value: 0 } };
-  const mat = new THREE.ShaderMaterial({
-    uniforms: uni,
-    vertexShader: `varying vec2 vUv; varying vec3 vN; varying vec3 vP; varying vec3 vDir;
-      void main(){ vUv=uv; vDir=normalize(position); vN=normalize(normalMatrix*normal); vec4 mv=modelViewMatrix*vec4(position,1.0); vP=mv.xyz; gl_Position=projectionMatrix*mv; }`,
-    fragmentShader: `precision highp float;
-      varying vec2 vUv; varying vec3 vN; varying vec3 vP; varying vec3 vDir;
-      uniform float uTime; uniform sampler2D uMap; uniform float uHasMap;
-      // 3D value noise — sampled on the sphere surface, so it has NO uv-wrap seam
-      float hash(vec3 p){ return fract(sin(dot(p,vec3(127.1,311.7,74.7)))*43758.5453); }
-      float noise(vec3 p){ vec3 i=floor(p),f=fract(p); f=f*f*(3.0-2.0*f);
-        float n000=hash(i),                 n100=hash(i+vec3(1.,0.,0.));
-        float n010=hash(i+vec3(0.,1.,0.)),  n110=hash(i+vec3(1.,1.,0.));
-        float n001=hash(i+vec3(0.,0.,1.)),  n101=hash(i+vec3(1.,0.,1.));
-        float n011=hash(i+vec3(0.,1.,1.)),  n111=hash(i+vec3(1.,1.,1.));
-        return mix(mix(mix(n000,n100,f.x),mix(n010,n110,f.x),f.y),
-                   mix(mix(n001,n101,f.x),mix(n011,n111,f.x),f.y), f.z); }
-      float fbm(vec3 p){ float v=0.,a=0.5; for(int i=0;i<5;i++){ v+=a*noise(p); p=p*2.03+vec3(1.7,9.2,3.3); a*=0.5; } return v; }
-      void main(){
-        float t=uTime*0.05;
-        vec3 d=normalize(vDir);
-        vec3 warp=vec3(fbm(d*4.0+vec3(t,0.0,0.0)), fbm(d*4.0+vec3(0.0,-t,0.0)), fbm(d*4.0+vec3(0.0,0.0,t)));
-        float cells=fbm(d*9.0+warp*1.5+vec3(-t*0.6,t*0.4,0.0));
-        float fine =fbm(d*22.0-warp*2.0+vec3(t*0.8,0.0,0.0));
-        float m=uHasMap>0.5 ? texture2D(uMap, vUv).r : 0.5;
-        float h=clamp(cells*0.72+fine*0.30+m*0.30, 0.0, 1.0);
-        vec3 cCool=vec3(0.50,0.08,0.015), cMid=vec3(1.0,0.36,0.05), cHot=vec3(1.0,0.82,0.42);
-        vec3 col=mix(cCool,cMid,smoothstep(0.14,0.50,h));
-        col=mix(col,cHot,smoothstep(0.62,0.98,h));
-        float fl=pow(max(fine-0.66,0.0)*3.0,2.0); col+=cHot*fl*0.7;   // flare sparkle
-        float ld=pow(max(dot(normalize(vN),normalize(-vP)),0.0),0.42); // limb darkening
-        col*=mix(0.5,1.18,ld);
-        gl_FragColor=vec4(col,1.0);
-      }`,
-  });
-  mat.userData.uniforms = uni;
-  texLoader.load(TEXTURES.sun, t => { t.colorSpace = THREE.SRGBColorSpace; t.wrapS = t.wrapT = THREE.RepeatWrapping; uni.uMap.value = t; uni.uHasMap.value = 1; mat.needsUpdate = true; });
-  return mat;
 }
 
 function makeLabel(text, cls) {
@@ -1939,7 +1874,7 @@ function tonightData() {
     if (darkStart == null) { if (a < -4) darkStart = t; }
     else if (a > -4) { darkEnd = t; break; }
   }
-  const bodies = [];
+  const bodies = [], meteors = [];
   if (darkStart != null) {
     if (darkEnd == null) darkEnd = darkStart + 14 * 3600000;
     const dMid = dDays(jdOf((darkStart + darkEnd) / 2));
@@ -1954,9 +1889,21 @@ function tonightData() {
       }
       if (best) bodies.push({ key, label, first, last, best });
     }
+    for (const sh of METEOR_SHOWERS) {                          // meteor showers with a visible radiant tonight
+      const st = showerStatus(sh, new Date(t0));
+      if (!st.active && !(st.diff >= 0 && st.diff <= 10)) continue;
+      let rFirst = null, rLast = null, rBest = null;
+      for (let t = darkStart; t <= darkEnd; t += STEP) {
+        const p = radiantAltAz(sh.ra, sh.dec, jdOf(t), lat, lon);
+        if (p.alt > 20) { if (rFirst == null) rFirst = t; rLast = t; if (!rBest || p.alt > rBest.alt) rBest = { ...p, t }; }
+      }
+      if (!rBest) continue;                                     // radiant never clears the murk → not actionable tonight
+      const rate = Math.max(1, Math.round(sh.zhr * Math.sin(rBest.alt * DEG) * (1 - 0.6 * lit / 100)));
+      meteors.push({ name: sh.name, diff: st.diff, rBest, rFirst, rLast, rate });
+    }
   }
   const passes = (typeof predictISSPasses === 'function' ? predictISSPasses(72) : []).filter(p => p.peak.elev >= 12);
-  return { darkStart, darkEnd, bodies, passes };
+  return { darkStart, darkEnd, bodies, passes, meteors };
 }
 
 let _tonightShown = false, _tonightDismissed = false;
@@ -1990,6 +1937,11 @@ function showTonightHeadsUp(force) {
     const dir = HEADING_NAMES[Math.round(b.best.az / 45) % 8];
     rows += `<div class="trow" data-body="${b.key}"><span class="k">● ${b.label}</span><span class="v">${fmtT(b.first)}–${fmtT(b.last)} · ${Math.round(b.best.alt)}° ${dir}</span></div>`;
   }
+  for (const mt of d.meteors) {
+    const dir = HEADING_NAMES[Math.round(mt.rBest.az / 45) % 8];
+    const pk = mt.diff === 0 ? 'peaks tonight!' : mt.diff > 0 ? `peak in ${mt.diff}d` : `${-mt.diff}d past peak`;
+    rows += `<div class="trow" data-radaz="${mt.rBest.az.toFixed(1)}" data-radalt="${Math.min(70, Math.round(mt.rBest.alt))}"><span class="k">☄ ${mt.name} · ${pk}</span><span class="v">${fmtT(mt.rFirst)}–${fmtT(mt.rLast)} · ~${mt.rate}/hr · ${dir}</span></div>`;
+  }
   const sub = d.darkStart ? `dark sky ${fmtT(d.darkStart)} – ${fmtT(d.darkEnd)}` : 'twilight all night';
   const el = document.createElement('div');
   el.className = 'tonight-pop';
@@ -2011,6 +1963,11 @@ function showTonightHeadsUp(force) {
     track('iss'); close();
   });
   el.querySelectorAll('.trow[data-body]').forEach(r => r.onclick = () => { track(r.dataset.body); close(); });
+  el.querySelectorAll('.trow[data-radaz]').forEach(r => r.onclick = () => {   // face the meteor radiant
+    toSky(); Sky._clearFollow(); Sky._focusSel.value = '';
+    Sky._resetTarget = { az: +r.dataset.radaz * DEG, alt: +r.dataset.radalt * DEG, fov: Sky.camera.fov };
+    close();
+  });
 }
 
 // Stylized display radius per system: real spacing ratios, compressed to sit near the planet
@@ -2284,7 +2241,7 @@ const RadioSFX = (() => {
 const Orrery = {
   meshes: {}, orbits: {}, moonMeshes: {}, spinMeshes: {}, focusBody: null, labels: null, renderer: null, labelRenderer: null,
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
-  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: true, showMarbles: false,
+  showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: false, showMarbles: false,
   trueTarget: 0, _helioR: {}, _orbitRaw: {}, starlinkStyle: 'dots',
 
   init() {
@@ -2321,26 +2278,17 @@ const Orrery = {
 
     // Sun
     const sun = new THREE.Mesh(
-      new THREE.SphereGeometry(2.6, 96, 96),
-      makeSunMaterial()
+      new THREE.SphereGeometry(2.6, 48, 48),
+      new THREE.MeshBasicMaterial({ color: 0xffd27d })
     );
+    applyTexture(sun.material, TEXTURES.sun);
     this.sunMesh = sun;
-    this.sunMat = sun.material;
-    // Layered soft corona: stacked additive radial glows that fade smoothly into
-    // space (a single fresnel shell reads as a hard ring, so we avoid that here).
-    const corona = [
-      { c0: 'rgba(255,210,120,0.85)', c1: 'rgba(255,150,50,0)', s: 8.5 },
-      { c0: 'rgba(255,150,60,0.45)',  c1: 'rgba(255,90,30,0)',  s: 15 },
-      { c0: 'rgba(255,90,30,0.22)',   c1: 'rgba(255,60,10,0)',  s: 26 },
-    ];
-    for (const g of corona) {
-      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
-        map: glowTexture(g.c0, g.c1), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-      }));
-      sp.scale.setScalar(g.s);
-      sun.add(sp);
-    }
-    const sunGlow = sun.children[0];                          // keep a handle for true-scale tweaks
+    const sunGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture('rgba(255,200,90,0.9)', 'rgba(255,140,40,0)'),
+      transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    sunGlow.scale.setScalar(9);
+    sun.add(sunGlow);
     sun.add(makeLabel('Sun', 'planet'));
     sun.userData.body = 'sun';
     this.scene.add(sun);
@@ -2361,7 +2309,7 @@ const Orrery = {
         new THREE.MeshStandardMaterial({ color: meta.color, roughness: 0.7, metalness: 0.05 })
       );
       mesh.userData.body = name;
-      if (TEXTURES[name] && name !== 'earth') applyTexture(mesh.material, TEXTURES[name]);  // earth albedo handled in _enhanceEarth
+      if (TEXTURES[name]) applyTexture(mesh.material, TEXTURES[name]);
       let node = mesh;                                       // what gets positioned in the scene
       if (name === 'saturn') {
         const ringGeo = new THREE.RingGeometry(meta.size * 1.45, meta.size * 2.3, 96);
@@ -2371,30 +2319,12 @@ const Orrery = {
           v3.fromBufferAttribute(rp, k);
           ruv.setXY(k, (v3.length() - meta.size * 1.45) / (meta.size * 0.85), 0.5);
         }
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 1, alphaTest: 0.02 });
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xcdb990, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
         applyTexture(ringMat, TEXTURES.saturnRing);
-        texLoader.load(TEXTURES.saturnRingPattern, t => {  // transparency strip → Cassini gaps
-          t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4; ringMat.alphaMap = t; ringMat.needsUpdate = true;
-        });
         const ring = new THREE.Mesh(ringGeo, ringMat);
         ring.rotation.x = Math.PI / 2 - 0.45;
         mesh.add(ring);
         this.saturnRing = ring;
-      }
-      if (name === 'uranus') {                                // faint, near-vertical ring system
-        const ringGeo = new THREE.RingGeometry(meta.size * 1.4, meta.size * 1.95, 96);
-        const rp = ringGeo.attributes.position, ruv = ringGeo.attributes.uv, v3 = new THREE.Vector3();
-        for (let k = 0; k < rp.count; k++) {
-          v3.fromBufferAttribute(rp, k);
-          ruv.setXY(k, (v3.length() - meta.size * 1.4) / (meta.size * 0.55), 0.5);
-        }
-        const ringMat = new THREE.MeshBasicMaterial({ color: 0x9fb8c4, side: THREE.DoubleSide, transparent: true, opacity: 0.55, alphaTest: 0.02 });
-        applyTexture(ringMat, TEXTURES.uranusRing);
-        texLoader.load(TEXTURES.uranusRingTrans, t => { t.colorSpace = THREE.NoColorSpace; ringMat.alphaMap = t; ringMat.needsUpdate = true; });
-        const ring = new THREE.Mesh(ringGeo, ringMat);
-        ring.rotation.y = Math.PI / 2 - 0.15;                 // Uranus is tipped ~98°: rings ride nearly upright
-        mesh.add(ring);
-        this.uranusRing = ring;
       }
       const systemMoons = Object.entries(MOONS).filter(([, m]) => m.planet === name);
       if (systemMoons.length) {
@@ -2426,13 +2356,11 @@ const Orrery = {
         this.homeDot = dot;
         mesh.add(dot);                                       // rides on the spinning globe
         this.earthSpin = mesh;
-        this._enhanceEarth(mesh);
         const moon = new THREE.Mesh(
           new THREE.SphereGeometry(0.16, 24, 24),
           new THREE.MeshStandardMaterial({ color: 0xb8b8c0, roughness: 0.9 })
         );
-        applyTexture(moon.material, TEXTURES.moonHi);
-        applyBump(moon.material, TEXTURES.moonBump, 0.004);
+        applyTexture(moon.material, TEXTURES.moon);
         moon.userData.isMoon = true;
         moon.userData.body = 'moon';
         const moonLabel = makeLabel('Moon', 'moon-label');
@@ -2442,11 +2370,6 @@ const Orrery = {
         node.add(moon);
         this.clickables.push(moon);
         this.earthMoonLabel = moonLabel;
-      }
-      const fx = PLANET_FX[name];                             // bump relief + atmosphere (earth handled separately)
-      if (fx) {
-        if (fx.bump) applyBump(mesh.material, fx.bump, fx.bumpScale);
-        if (fx.atmo) addAtmosphere(mesh, meta.size, fx.atmo.color, fx.atmo);
       }
       const label = makeLabel(name[0].toUpperCase() + name.slice(1), 'planet');
       node.add(label);
@@ -2654,29 +2577,27 @@ const Orrery = {
     const dimmer = document.createElement('div');
     dimmer.className = 'dimmer-pill';
     dimmer.title = 'Sun light intensity';
-    dimmer.innerHTML = `<span class="ico">☀</span><input type="range" min="0" max="200" value="37"><span class="val">37%</span>`;
+    dimmer.innerHTML = `<span class="ico">☀</span><input type="range" min="0" max="200" value="100"><span class="val">100%</span>`;
     const slider = dimmer.querySelector('input'), valEl = dimmer.querySelector('.val');
-    const applySunDim = v => {
+    slider.addEventListener('input', () => {
+      const v = slider.value / 100;
       this.sunLight.intensity = 2600 * v;
       this.ambient.intensity = 2.2 * (0.35 + 0.65 * v);     // keep night sides faintly readable
       this.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * v);
-      valEl.textContent = Math.round(v * 100) + '%';
-    };
-    slider.addEventListener('input', () => applySunDim(slider.value / 100));
-    applySunDim(0.37);
+      valEl.textContent = slider.value + '%';
+    });
     document.getElementById('orrery-toggles').appendChild(dimmer);
 
     // Milky Way brightness dimmer
     const mwDim = document.createElement('div');
     mwDim.className = 'dimmer-pill';
     mwDim.title = 'Milky Way brightness';
-    mwDim.innerHTML = `<span class="ico">🌌</span><input type="range" min="0" max="200" value="55"><span class="val">55%</span>`;
+    mwDim.innerHTML = `<span class="ico">🌌</span><input type="range" min="0" max="200" value="100"><span class="val">100%</span>`;
     const mwSlider = mwDim.querySelector('input'), mwVal = mwDim.querySelector('.val');
     mwSlider.addEventListener('input', () => {
       this.setMWBrightness(mwSlider.value / 100);
       mwVal.textContent = mwSlider.value + '%';
     });
-    this.setMWBrightness(0.55);
     document.getElementById('orrery-toggles').appendChild(mwDim);
   },
 
@@ -3286,11 +3207,9 @@ const Orrery = {
 
   addPluto() {
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(0.16, 48, 48),
-      new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, metalness: 0.0, emissive: 0x1a1410, emissiveIntensity: 0.5 })
+      new THREE.SphereGeometry(0.16, 20, 20),
+      new THREE.MeshStandardMaterial({ color: 0xc2a17d, roughness: 0.92, metalness: 0.02, emissive: 0x271c12 })
     );
-    applyTexture(mesh.material, TEXTURES.pluto);                                 // New Horizons global color mosaic
-    addAtmosphere(mesh, 0.16, 0xbcd2ff, { power: 3.0, intensity: 0.4, scale: 1.05 });  // thin nitrogen haze
     mesh.userData.body = 'pluto';
     mesh.visible = this.showPluto;
     const label = makeLabel('Pluto', 'planet');
@@ -3315,8 +3234,7 @@ const Orrery = {
     const mesh = this.meshes.pluto;
     mesh.visible = this.showPluto;
     if (mesh.userData.label) mesh.userData.label.visible = this.showPluto;
-    // Orbit shows when Pluto is selected (even if global orbit paths are off), or with the global toggle
-    if (this.plutoOrbit) this.plutoOrbit.visible = this.showPluto && (this.focusBody === 'pluto' || this.showOrbits);
+    if (this.plutoOrbit) this.plutoOrbit.visible = this.showPluto && this.showOrbits;
     if (!this.showPluto) return;
     const E = solveKepler(rev(PLUTO.n * (d - PLUTO.dPeri)), PLUTO.e);
     const p = this._plutoPosFromE(E);
@@ -4114,90 +4032,6 @@ const Orrery = {
     return out.copy(this.meshes[this.focusBody].position);
   },
 
-  // Upgrade the plain Earth globe to a photoreal one: glossy oceans (sun glint),
-  // terrain relief, an independent cloud shell, dark-side city lights, atmosphere.
-  _enhanceEarth(mesh) {
-    const R = PLANET_META.earth.size, mat = mesh.material;
-    mat.roughness = 1.0; mat.metalness = 0.0;                 // base; maps below sculpt oceans vs land
-
-    // Albedo with baked-in contrast (an S-curve + slight darken) so the sunlit
-    // face reads punchy instead of washed-out under the bright point light.
-    texLoader.load(TEXTURES.earth, t => {
-      const img = t.image, c = document.createElement('canvas');
-      c.width = img.width; c.height = img.height;
-      const g = c.getContext('2d'); g.drawImage(img, 0, 0);
-      const id = g.getImageData(0, 0, c.width, c.height), px = id.data, K = 1.42, B = 0.82;
-      for (let i = 0; i < px.length; i += 4) for (let k = 0; k < 3; k++) {
-        let v = ((px[i + k] - 128) * K + 128) * B; px[i + k] = v < 0 ? 0 : v > 255 ? 255 : v;
-      }
-      g.putImageData(id, 0, 0);
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
-      mat.map = tex; mat.color.set(0xffffff); mat.needsUpdate = true;
-    });
-
-    // Terrain relief.
-    texLoader.load(EARTH_MAPS.normal, t => {
-      t.colorSpace = THREE.NoColorSpace; t.anisotropy = 4;
-      mat.normalMap = t; mat.normalScale = new THREE.Vector2(0.6, 0.6); mat.needsUpdate = true;
-    });
-
-    // Ocean gloss: the specular mask is white over water, black over land. Invert
-    // (and compress) into a roughness map so seas are glossy (~0.15) and land matte;
-    // reuse the raw mask as a metalness map so only water catches a real sun glint.
-    texLoader.load(EARTH_MAPS.specular, t => {
-      const img = t.image, c = document.createElement('canvas');
-      c.width = img.width; c.height = img.height;
-      const g = c.getContext('2d'); g.drawImage(img, 0, 0);
-      const id = g.getImageData(0, 0, c.width, c.height), px = id.data;
-      for (let i = 0; i < px.length; i += 4) { const v = 255 - Math.round(px[i] * 0.78); px[i] = px[i + 1] = px[i + 2] = v; }
-      g.putImageData(id, 0, 0);
-      const rough = new THREE.CanvasTexture(c);
-      rough.colorSpace = THREE.NoColorSpace; rough.anisotropy = 4;
-      mat.roughnessMap = rough;
-      t.colorSpace = THREE.NoColorSpace; mat.metalnessMap = t; mat.metalness = 0.12;
-      mat.needsUpdate = true;
-    });
-
-    // City lights, masked to the night side via the live sun direction (view space).
-    this.earthUniforms = { uSunViewDir: { value: new THREE.Vector3(0, 0, 1) } };
-    mat.onBeforeCompile = shader => {
-      shader.uniforms.uSunViewDir = this.earthUniforms.uSunViewDir;
-      shader.fragmentShader = 'uniform vec3 uSunViewDir;\n' + shader.fragmentShader.replace(
-        '#include <emissivemap_fragment>',
-        `#include <emissivemap_fragment>
-         float nightF = smoothstep(0.12, -0.22, dot(normalize(normal), normalize(uSunViewDir)));
-         totalEmissiveRadiance *= nightF;`
-      );
-    };
-    texLoader.load(EARTH_MAPS.lights, t => {
-      t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
-      mat.emissive = new THREE.Color(0xffe8c2); mat.emissiveMap = t; mat.emissiveIntensity = 3.2;
-      mat.needsUpdate = true;
-    });
-
-    // Independent cloud shell (drifts slowly relative to the globe).
-    const cloudMat = new THREE.MeshStandardMaterial({ color: 0xeef2f6, transparent: true, depthWrite: false, roughness: 1, metalness: 0, opacity: 0.6 });
-    texLoader.load(EARTH_MAPS.clouds, t => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; cloudMat.alphaMap = t; cloudMat.needsUpdate = true; });
-    const clouds = new THREE.Mesh(new THREE.SphereGeometry(R * 1.012, 48, 48), cloudMat);
-    clouds.renderOrder = 1;
-    mesh.add(clouds);
-    this.earthClouds = clouds;
-
-    // Blue atmospheric limb glow — a soft rim hugging the globe (not a hard ring).
-    addAtmosphere(mesh, R, 0x9cc8ff, { power: 4.0, intensity: 0.55, scale: 1.02 });
-  },
-
-  // Per-frame Earth FX: drift the clouds and feed the night-side shader the sun dir.
-  _updateEarthFX() {
-    if (this.earthClouds) this.earthClouds.rotation.y = (this._animMs || 0) / 1000 * 0.006;
-    if (this.earthUniforms && this.meshes.earth) {
-      const dir = this.meshes.earth.getWorldPosition(_tmpV).multiplyScalar(-1).normalize();
-      dir.transformDirection(this.camera.matrixWorldInverse);  // toward Sun (origin), in view space
-      this.earthUniforms.uSunViewDir.value.copy(dir);
-    }
-  },
-
   // Orient the textured globe so Greenwich faces RA = GMST (true rotation +
   // 23.4° axial tilt), then pin the home marker at the saved lat/lon.
   orientEarth(d) {
@@ -4242,11 +4076,10 @@ const Orrery = {
         : helio(name, d);
       this._helioR[name] = Math.sqrt(p.x * p.x + p.y * p.y + p.z * p.z);
       this.meshes[name].position.copy(eclToScene(p));
-      if (name === 'earth') { this.orientEarth(d); this._updateEarthFX(); }
+      if (name === 'earth') this.orientEarth(d);
       else (this.spinMeshes[name] || this.meshes[name]).rotation.y = rev(d * 360 / { mercury: 58.6, venus: -243, mars: 1.03, jupiter: 0.41, saturn: 0.45, uranus: -0.72, neptune: 0.67 }[name]) * DEG;
     }
     this.sunMesh.rotation.y = -rev(d * 360 / 25.4) * DEG;    // ~25-day solar rotation
-    if (this.sunMat) this.sunMat.userData.uniforms.uTime.value = (this._animMs || 0) / 1000;
     if (this.kuiperPoints) this.kuiperPoints.rotation.y = -rev(d * 360 / 99400) * DEG;  // belt drift, ~272-yr orbit @42 AU
     this.updateISS(d);
     this.updateSats(d);
@@ -5318,15 +5151,43 @@ function showTonight() {
       rows += `<div class="row${best ? ' clickable' : ''}" data-body="${key}">
         <span class="k">${best ? '●' : '○'} ${label}</span><span class="v">${status}</span></div>`;
     }
+
+    // Meteor showers active now (or peaking within 14 days)
+    let met = '';
+    for (const sh of METEOR_SHOWERS) {
+      const st = showerStatus(sh, Sim.date);
+      if (!st.active && !(st.diff >= 0 && st.diff <= 14)) continue;
+      let rFirst = null, rLast = null, rBest = null;                    // radiant well above the murk (>20°)
+      for (let t = darkStart; t <= darkEnd; t += STEP) {
+        const p = radiantAltAz(sh.ra, sh.dec, jdOf(t), lat, lon);
+        if (p.alt > 20) { if (rFirst == null) rFirst = t; rLast = t; if (!rBest || p.alt > rBest.alt) rBest = { ...p, t }; }
+      }
+      const peakTxt = st.diff === 0 ? 'peaks tonight!' : st.diff > 0 ? `peak in ${st.diff}d` : `${-st.diff}d past peak`;
+      let vis;
+      if (rBest) {                                                     // observed rate ≈ ZHR·sin(alt), dimmed by moonlight
+        const rate = Math.max(1, Math.round(sh.zhr * Math.sin(rBest.alt * DEG) * (1 - 0.6 * lit / 100)));
+        vis = `radiant up ${fmtT(rFirst)}–${fmtT(rLast)} · ~${rate}/hr · ${HEADING_NAMES[Math.round(rBest.az / 45) % 8]}`;
+      } else {
+        vis = 'radiant below horizon tonight';
+      }
+      met += `<div class="row${rBest ? ' clickable' : ''}" data-radaz="${rBest ? rBest.az.toFixed(1) : ''}" data-radalt="${rBest ? Math.min(70, Math.round(rBest.alt)) : ''}">
+        <span class="k">${rBest ? '☄' : '○'} ${sh.name} · ${peakTxt}</span><span class="v">${vis}</span></div>`;
+    }
+    if (met) rows += `<div class="kind" style="margin:12px 0 2px">Meteor showers</div>${met}`;
   }
   const dt = Sim.date;
   card.innerHTML = `<button class="close">×</button><h3>Tonight’s Sky</h3>
     <div class="kind">${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} · ${sub}</div>
-    ${rows}<div class="fact">Naked-eye objects, as seen from ${Loc.name}. Tap a visible one to track it.</div>`;
+    ${rows}<div class="fact">Naked-eye objects, as seen from ${Loc.name}. Tap a visible one to track it. ☄ meteors radiate from the marked point — lie back and watch the whole sky.</div>`;
   card.querySelector('.close').onclick = () => card.classList.remove('open');
-  card.querySelectorAll('.row.clickable').forEach(r => r.onclick = () => {
+  card.querySelectorAll('.row.clickable[data-body]').forEach(r => r.onclick = () => {
     Sky._focusSel.value = r.dataset.body;
     Sky._focusSel.dispatchEvent(new Event('change'));
+    card.classList.remove('open');
+  });
+  card.querySelectorAll('.row.clickable[data-radaz]').forEach(r => r.onclick = () => {   // face the radiant
+    Sky._clearFollow(); Sky._focusSel.value = '';
+    Sky._resetTarget = { az: +r.dataset.radaz * DEG, alt: +r.dataset.radalt * DEG, fov: Sky.camera.fov };
     card.classList.remove('open');
   });
   card.classList.add('open');
@@ -6322,11 +6183,6 @@ const Tour = (() => {
         pillHide('orrery-toggles'); pillHide('sky-toggles'); pillHide('time-bar');
         loadStarlinkCatalog(); O._starReady = false;
         loadSatGroup('nav'); loadSatGroup('geo'); loadSatGroup('debris');
-        // cinematic sun level — brighter than the UI default (37%) for video impact
-        const sv = 0.70;
-        if (O.sunLight) O.sunLight.intensity = 2600 * sv;
-        if (O.ambient) O.ambient.intensity = 2.2 * (0.35 + 0.65 * sv);
-        if (O.sunGlow) O.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * sv);
       } },
     { t: 22600, fn() {                                       // "roll the date forward": show time controls, run at 1 mo/s
         const tb = document.getElementById('time-bar'); if (tb) tb.classList.remove('collapsed');
@@ -6334,13 +6190,7 @@ const Tour = (() => {
       } },
     { t: 28000, fn() { O.setFocus('jupiter'); pillHide('time-bar'); Sim.speedIdx = 5; refreshSpeedUI(); } },
     { t: 38200, fn() { O.setFocus('saturn'); } },
-    { t: 49000, fn() {
-        O.setFocus('earth'); O.showISS = true;
-        const sv = 0.40;
-        if (O.sunLight) O.sunLight.intensity = 2600 * sv;
-        if (O.ambient) O.ambient.intensity = 2.2 * (0.35 + 0.65 * sv);
-        if (O.sunGlow) O.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * sv);
-      } },
+    { t: 49000, fn() { O.setFocus('earth'); O.showISS = true; } },
     { t: 59000, fn() {
         O.showStarlink = true; loadStarlinkCatalog(); O._starReady = false; O._applyStarlinkVis();
         for (const id of ['nav', 'geo', 'debris']) { O.satLayers[id].on = true; loadSatGroup(id); } O._applySatGroupVis();
@@ -6356,10 +6206,6 @@ const Tour = (() => {
         O.showMag = false; for (const g of O.magFields) g.visible = false;
         O.setFocus(null);
         O.showGrav = true; O.gravGrid.visible = true; for (const p of O.gravPatches) p.visible = true; O._gravT = null;
-        const sv = 0.70;
-        if (O.sunLight) O.sunLight.intensity = 2600 * sv;
-        if (O.ambient) O.ambient.intensity = 2.2 * (0.35 + 0.65 * sv);
-        if (O.sunGlow) O.sunGlow.material.opacity = Math.min(1, 0.1 + 0.9 * sv);
       } },
     { t: 91600, fn() {
         O.showGrav = false; O.gravGrid.visible = false; for (const p of O.gravPatches) p.visible = false;
@@ -6552,19 +6398,6 @@ const Tour = (() => {
     O._animMs = t;                                            // deterministic animation clock for mag-field flow
     try { updateClocks(performance.now()); } catch (e) {}     // tick the SIM clock (date rolls forward under the warp)
     setScaleMorph(morphAt(t)); O._applyScaleMorph();
-    // Pre-sync planet mesh positions from current Sim.d so applyCam reads the correct
-    // world position — without this, at() returns the stale position from the previous
-    // O.update() call, which causes a rogue frame at hard cuts where sim time jumps
-    // (e.g. the time-warp reset at the Jupiter cut, t=28s).
-    { const d = Sim.d;
-      for (const name of PLANET_NAMES) {
-        const p = name === 'earth'
-          ? (s => ({ x: -s.x, y: -s.y, z: -s.z }))(sunGeo(d))
-          : helio(name, d);
-        O.meshes[name].position.copy(eclToScene(p));
-      }
-      try { O.updatePluto(d); } catch(e) {}
-    }
     showCaps(t);
     if (activeView === 'orrery') applyCam(t); else skyPan(t);
     O._starReady = false;                                     // force a FULL satellite repopulate this frame
