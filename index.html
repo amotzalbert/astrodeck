@@ -127,7 +127,7 @@
     font-family: var(--mono); font-size: 10.5px; letter-spacing: 1.2px;
     color: rgba(235, 242, 252, 0.98); text-transform: uppercase;
     text-shadow: 0 0 6px rgba(0,0,0,0.95), 0 1px 3px rgba(0,0,0,0.9);
-    padding-left: 10px;
+    padding-left: 10px; pointer-events: none;                 /* clicks pass through to the canvas pick */
   }
   .obj-label.planet { color: #7ef5e2; }
   .obj-label.star-name { color: rgba(253, 211, 92, 0.95); font-size: 9.5px; }
@@ -135,6 +135,14 @@
   .obj-label.const-name {
     color: rgba(196, 167, 255, 0.92); font-size: 10px; letter-spacing: 2.5px;
     font-weight: 600;
+  }
+  .obj-label.dso-name {
+    color: rgba(148, 231, 205, 0.9); font-size: 8.5px; letter-spacing: 0.8px;
+    text-transform: none; padding-left: 8px;
+  }
+  .obj-label.radiant-name {
+    color: rgba(255, 197, 138, 0.95); font-size: 9px; letter-spacing: 0.6px;
+    text-transform: none; padding-left: 9px; font-weight: 600;
   }
 
   /* ---------- Floating control bar ---------- */
@@ -736,6 +744,16 @@
   .apod-caption { font-family: var(--mono); font-size: 10px; color: var(--text-dim); }
 
   /* ---------- ISS pass banner ---------- */
+  .eclipse-banner {
+    position: fixed; top: 68px; left: 50%; transform: translateX(-50%);
+    max-width: min(560px, calc(100vw - 20px));
+    background: var(--panel); backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 180, 120, 0.4);
+    border-radius: var(--radius); padding: 11px 16px;
+    font-size: 13px; color: rgba(255, 226, 200, 0.96); letter-spacing: 0.3px;
+    z-index: 60; box-shadow: 0 8px 32px rgba(0,0,0,0.6), 0 0 24px rgba(255,160,90,0.14);
+    animation: bannerIn .45s ease; pointer-events: none; text-align: center;
+  }
   .pass-banner {
     position: fixed; top: 68px; left: 50%; transform: translateX(-50%);
     display: flex; align-items: center; gap: 12px;
@@ -1180,8 +1198,10 @@
           <div class="help-row"><span class="icon">🎯</span><span><strong>Focus on…</strong> dropdown — pick any planet, Moon, or ISS and the view glides to track it. Live altitude ↑↓ markers show what's above/below the horizon.</span></div>
           <div class="help-row"><span class="icon">🌒</span><span>The <strong>Moon shows its real phase</strong> — crescent to full, lit from the Sun's true sky direction, with faint earthshine on the dark side.</span></div>
           <div class="help-row"><span class="icon">🌌</span><span>The <strong>Milky Way</strong> band arcs across the sky in its true position — brightest toward the Sagittarius core, with the Great Rift dust lane. Toggleable; fades out first in twilight.</span></div>
+          <div class="help-row"><span class="icon">🔭</span><span><strong>Deep sky (Messier)</strong> — all 110 Messier objects plotted at their true positions, drawn as distinct glyphs for galaxies, star clusters and nebulae. Tap any one for a card with its type, magnitude, coordinates and a fact; "Point at it" glides the view there. The famous ones carry name labels (toggle separately).</span></div>
+          <div class="help-row"><span class="icon">☄️</span><span><strong>Meteor showers</strong> — when a major shower is active for the current date, its radiant appears as a labelled burst and real meteors streak outward from it (rate scaled to the shower's ZHR). The <strong>Tonight</strong> panel lists every active shower with days-to-peak, ZHR and Moon phase — tap one to fly to its radiant. Time-travel to Aug 12 (Perseids) or Dec 14 (Geminids) for the big ones.</span></div>
+          <div class="help-row"><span class="icon">🌘</span><span><strong>Eclipses</strong> — the <strong>Eclipses</strong> pill lists every upcoming solar &amp; lunar eclipse (NASA data); tap one to time-travel there. In Sky View a total lunar eclipse turns the Moon blood-red, and a solar eclipse darkens the daytime sky, brings out the stars and rings the Sun with its corona — set your location onto the path to see totality. In the Solar System view, focus Earth to watch the shadow cones: the Moon reddening inside Earth's umbra, or the Moon's own shadow spearing onto Earth.</span></div>
           <div class="help-row"><span class="icon">✨</span><span><strong>Tonight</strong> panel — scans the coming dark window and lists every naked-eye planet + Moon: visible hours, peak altitude, compass direction. Tap any row to track it.</span></div>
-          <div class="help-row"><span class="icon">☄</span><span><strong>Meteor-shower alerts</strong> — the 8 great annual showers (Perseids, Geminids, Quadrantids, Lyrids, Eta &amp; Delta Aquariids, Orionids, Leonids). When one is active — or peaking within two weeks — it appears in the Tonight panel and heads-up with the radiant's up-window, a realistic hourly rate (adjusted for radiant altitude and moonlight), the compass direction, and a "peaks tonight!" flag. Tap to face the radiant — then watch the <em>whole</em> sky: meteors streak everywhere, they just trace back to that point.</span></div>
           <div class="help-row"><span class="icon">🛰️</span><span><strong>ISS pass alert</strong> — a banner appears only on nights with a genuinely visible pass (station &gt;10°, sky dark, station sunlit). "Show me" jumps to the pass and tracks it.</span></div>
           <div class="help-row"><span class="icon">🧭</span><span>Live <strong>compass</strong> (bottom-left) shows your heading. Click it to snap back to North.</span></div>
           <div class="help-row"><span class="icon">↺</span><span><strong>Reset View</strong> returns to your saved default direction and 28° altitude. Useful after manual panning.</span></div>
@@ -1383,38 +1403,6 @@ function bodyAltAzAt(name, jd, latDeg, lonDeg) {
   return { alt, az: (az + 360) % 360 };
 }
 
-// Alt/az of a fixed-sky point (meteor radiant), RA/Dec in J2000 degrees
-function radiantAltAz(raDeg, decDeg, jd, latDeg, lonDeg) {
-  const H = lstRad(jd, lonDeg) - raDeg * DEG, phi = latDeg * DEG, dec = decDeg * DEG;
-  const sd = Math.sin(dec), cd = Math.cos(dec), ch = Math.cos(H);
-  const alt = Math.asin(Math.sin(phi) * sd + Math.cos(phi) * cd * ch) / DEG;
-  const az = Math.atan2(-cd * Math.sin(H), Math.cos(phi) * sd - Math.sin(phi) * cd * ch) / DEG;
-  return { alt, az: (az + 360) % 360 };
-}
-
-// Major annual meteor showers — IMO averages. Radiant RA/Dec J2000; zhr = peak rate.
-const METEOR_SHOWERS = [
-  { name: 'Quadrantids',     start: [12, 28], end: [1, 12],  peak: [1, 3],   ra: 230, dec: 49,  zhr: 110 },
-  { name: 'Lyrids',          start: [4, 16],  end: [4, 25],  peak: [4, 22],  ra: 271, dec: 34,  zhr: 18 },
-  { name: 'Eta Aquariids',   start: [4, 19],  end: [5, 28],  peak: [5, 6],   ra: 338, dec: -1,  zhr: 50 },
-  { name: 'Delta Aquariids', start: [7, 12],  end: [8, 23],  peak: [7, 30],  ra: 340, dec: -16, zhr: 25 },
-  { name: 'Perseids',        start: [7, 17],  end: [8, 24],  peak: [8, 12],  ra: 48,  dec: 58,  zhr: 100 },
-  { name: 'Orionids',        start: [10, 2],  end: [11, 7],  peak: [10, 21], ra: 95,  dec: 16,  zhr: 20 },
-  { name: 'Leonids',         start: [11, 6],  end: [11, 30], peak: [11, 17], ra: 152, dec: 22,  zhr: 15 },
-  { name: 'Geminids',        start: [12, 4],  end: [12, 17], peak: [12, 14], ra: 112, dec: 33,  zhr: 150 },
-];
-const _DOY_CUM = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
-const doyOf = (m, d) => _DOY_CUM[m - 1] + d;
-// Is the shower active on `date`, and how many days until its peak (signed, nearest occurrence)?
-function showerStatus(sh, date) {
-  const md = (date.getMonth() + 1) * 100 + date.getDate();
-  const s = sh.start[0] * 100 + sh.start[1], e = sh.end[0] * 100 + sh.end[1];
-  const active = s <= e ? (md >= s && md <= e) : (md >= s || md <= e);   // handles Dec→Jan wrap
-  let diff = doyOf(sh.peak[0], sh.peak[1]) - doyOf(date.getMonth() + 1, date.getDate());
-  if (diff > 183) diff -= 365; else if (diff < -183) diff += 365;
-  return { active, diff };
-}
-
 /* =====================================================================
    TIME ENGINE + LOCATION
    ===================================================================== */
@@ -1489,6 +1477,81 @@ const hardDotTex = (() => {
   const g = c.getContext('2d');
   g.fillStyle = '#fff';
   g.beginPath(); g.arc(16, 16, 13, 0, 7); g.fill();
+  return new THREE.CanvasTexture(c);
+})();
+
+// Deep-sky-object glyphs — a small distinct icon per family (galaxy / cluster / nebula),
+// drawn white so a SpriteMaterial colour tints each family. Soft alpha keeps them faint.
+function dsoGlyph(kind) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.translate(32, 32);
+  if (kind === 'galaxy') {                                   // tilted ellipse + bright core
+    g.rotate(-0.5);
+    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2.4;
+    g.beginPath(); g.ellipse(0, 0, 22, 9, 0, 0, 7); g.stroke();
+    const core = g.createRadialGradient(0, 0, 0, 0, 0, 10);
+    core.addColorStop(0, 'rgba(255,255,255,1)'); core.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = core; g.beginPath(); g.arc(0, 0, 10, 0, 7); g.fill();
+  } else if (kind === 'cluster') {                           // ring of small dots
+    g.fillStyle = 'rgba(255,255,255,0.95)';
+    for (let i = 0; i < 8; i++) {
+      const a = i / 8 * Math.PI * 2;
+      g.beginPath(); g.arc(Math.cos(a) * 18, Math.sin(a) * 18, 2.6, 0, 7); g.fill();
+    }
+    g.globalAlpha = 0.85; g.beginPath(); g.arc(0, 0, 3.2, 0, 7); g.fill();
+  } else {                                                   // nebula — soft square cloud
+    const grad = g.createRadialGradient(0, 0, 2, 0, 0, 26);
+    grad.addColorStop(0, 'rgba(255,255,255,0.85)');
+    grad.addColorStop(0.55, 'rgba(255,255,255,0.35)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grad; g.fillRect(-26, -26, 52, 52);
+    g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = 1.6;
+    g.strokeRect(-15, -15, 30, 30);
+  }
+  return new THREE.CanvasTexture(c);
+}
+const DSO_TEX = { galaxy: dsoGlyph('galaxy'), cluster: dsoGlyph('cluster'), nebula: dsoGlyph('nebula') };
+
+// Meteor-shower radiant marker: a soft ringed burst with radiating spokes.
+const RADIANT_TEX = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.translate(32, 32);
+  g.strokeStyle = 'rgba(255,214,150,0.9)'; g.lineWidth = 1.6;
+  for (let i = 0; i < 12; i++) {                              // radiating spokes
+    const a = i / 12 * Math.PI * 2;
+    g.beginPath(); g.moveTo(Math.cos(a) * 9, Math.sin(a) * 9);
+    g.lineTo(Math.cos(a) * 26, Math.sin(a) * 26); g.stroke();
+  }
+  g.lineWidth = 2; g.beginPath(); g.arc(0, 0, 9, 0, 7); g.stroke();
+  const core = g.createRadialGradient(0, 0, 0, 0, 0, 8);
+  core.addColorStop(0, 'rgba(255,240,210,1)'); core.addColorStop(1, 'rgba(255,200,120,0)');
+  g.fillStyle = core; g.beginPath(); g.arc(0, 0, 8, 0, 7); g.fill();
+  return new THREE.CanvasTexture(c);
+})();
+
+// Solar corona — a soft pearly halo with faint rays, transparent at the centre
+// so the dark Moon disk shows through during totality.
+const CORONA_TEX = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 128;
+  const g = c.getContext('2d');
+  g.translate(64, 64);
+  g.strokeStyle = 'rgba(255,250,235,0.13)'; g.lineWidth = 2;
+  for (let i = 0; i < 28; i++) {
+    const a = i / 28 * Math.PI * 2;
+    g.beginPath(); g.moveTo(Math.cos(a) * 30, Math.sin(a) * 30);
+    g.lineTo(Math.cos(a) * (54 + Math.random() * 8), Math.sin(a) * (54 + Math.random() * 8)); g.stroke();
+  }
+  const grad = g.createRadialGradient(0, 0, 27, 0, 0, 64);
+  grad.addColorStop(0, 'rgba(255,250,238,0)');
+  grad.addColorStop(0.28, 'rgba(255,248,228,0.6)');
+  grad.addColorStop(0.5, 'rgba(255,240,212,0.24)');
+  grad.addColorStop(1, 'rgba(255,238,208,0)');
+  g.fillStyle = grad; g.beginPath(); g.arc(0, 0, 64, 0, 7); g.fill();
   return new THREE.CanvasTexture(c);
 })();
 
@@ -1890,21 +1953,22 @@ function tonightData() {
       }
       if (best) bodies.push({ key, label, first, last, best });
     }
-    for (const sh of METEOR_SHOWERS) {                          // meteor showers with a visible radiant tonight
-      const st = showerStatus(sh, new Date(t0));
-      if (!st.active && !(st.diff >= 0 && st.diff <= 10)) continue;
+    const now = new Date(t0);
+    for (const sh of METEOR_SHOWERS) {                         // showers active tonight (or peaking within 10 days)
+      const dtp = Math.round(daysToPeak(sh, now));
+      if (!showerActiveOn(sh, now) && !(dtp >= 0 && dtp <= 10)) continue;
       let rFirst = null, rLast = null, rBest = null;
       for (let t = darkStart; t <= darkEnd; t += STEP) {
-        const p = radiantAltAz(sh.ra, sh.dec, jdOf(t), lat, lon);
-        if (p.alt > 20) { if (rFirst == null) rFirst = t; rLast = t; if (!rBest || p.alt > rBest.alt) rBest = { ...p, t }; }
+        const p = radiantAltAz(sh[1], sh[2], jdOf(t), lat, lon);
+        if (p.alt / DEG > 20) { if (rFirst == null) rFirst = t; rLast = t; if (!rBest || p.alt > rBest.alt) rBest = { alt: p.alt, az: p.az }; }
       }
-      if (!rBest) continue;                                     // radiant never clears the murk → not actionable tonight
-      const rate = Math.max(1, Math.round(sh.zhr * Math.sin(rBest.alt * DEG) * (1 - 0.6 * lit / 100)));
-      meteors.push({ name: sh.name, diff: st.diff, rBest, rFirst, rLast, rate });
+      if (!rBest) continue;                                    // radiant never clears the horizon murk tonight
+      const rate = Math.max(1, Math.round(sh[9] * Math.sin(rBest.alt) * (1 - 0.6 * lit / 100)));
+      meteors.push({ name: sh[0], diff: dtp, rBest, rFirst, rLast, rate });
     }
   }
   const passes = (typeof predictISSPasses === 'function' ? predictISSPasses(72) : []).filter(p => p.peak.elev >= 12);
-  return { darkStart, darkEnd, bodies, passes, meteors };
+  return { darkStart, darkEnd, bodies, meteors, passes };
 }
 
 let _tonightShown = false, _tonightDismissed = false;
@@ -1939,9 +2003,9 @@ function showTonightHeadsUp(force) {
     rows += `<div class="trow" data-body="${b.key}"><span class="k">● ${b.label}</span><span class="v">${fmtT(b.first)}–${fmtT(b.last)} · ${Math.round(b.best.alt)}° ${dir}</span></div>`;
   }
   for (const mt of d.meteors) {
-    const dir = HEADING_NAMES[Math.round(mt.rBest.az / 45) % 8];
+    const dir = HEADING_NAMES[Math.round(mt.rBest.az / DEG / 45) % 8];
     const pk = mt.diff === 0 ? 'peaks tonight!' : mt.diff > 0 ? `peak in ${mt.diff}d` : `${-mt.diff}d past peak`;
-    rows += `<div class="trow" data-radaz="${mt.rBest.az.toFixed(1)}" data-radalt="${Math.min(70, Math.round(mt.rBest.alt))}"><span class="k">☄ ${mt.name} · ${pk}</span><span class="v">${fmtT(mt.rFirst)}–${fmtT(mt.rLast)} · ~${mt.rate}/hr · ${dir}</span></div>`;
+    rows += `<div class="trow" data-radaz="${(mt.rBest.az / DEG).toFixed(1)}" data-radalt="${Math.min(70, Math.round(mt.rBest.alt / DEG))}"><span class="k">☄ ${mt.name} · ${pk}</span><span class="v">${fmtT(mt.rFirst)}–${fmtT(mt.rLast)} · ~${mt.rate}/hr · ${dir}</span></div>`;
   }
   const sub = d.darkStart ? `dark sky ${fmtT(d.darkStart)} – ${fmtT(d.darkEnd)}` : 'twilight all night';
   const el = document.createElement('div');
@@ -2514,6 +2578,13 @@ const Orrery = {
     pingBtn.title = 'Send a pulse of light from the Sun at real light-speed (sim time)';
     pingBtn.onclick = () => this.startPing();
     document.getElementById('orrery-toggles').appendChild(pingBtn);
+
+    const eclBtn = document.createElement('button');
+    eclBtn.className = 'toggle-pill';
+    eclBtn.innerHTML = `<span style="font-size:12px;line-height:0">🌘</span>Eclipses`;
+    eclBtn.title = 'Jump to an upcoming solar or lunar eclipse';
+    eclBtn.onclick = () => showEclipseFinder('orrery-info');
+    document.getElementById('orrery-toggles').appendChild(eclBtn);
 
     // Starlink — custom pill: click toggles on/off; the 1/2/3 segments pick the
     // render style (sharp dots · orbital rings · inclination shells).
@@ -4063,6 +4134,52 @@ const Orrery = {
     }
   },
 
+  // Shadow cones (Earth's umbra + the Moon's, cast along the anti-solar axis) and
+  // a blood-red Moon inside the umbra — shown when focused on Earth during an eclipse.
+  initEclipseCones() {
+    const earthSize = PLANET_META.earth.size;
+    this._umbraLen = 3.4;
+    this.eclipseGroup = new THREE.Group();
+    this.eclipseGroup.visible = false;
+    const umbMat = new THREE.MeshBasicMaterial({ color: 0x3b4a78, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false });
+    this.earthUmbra = new THREE.Mesh(new THREE.ConeGeometry(earthSize * 0.98, this._umbraLen, 48, 1, true), umbMat);
+    this.eclipseGroup.add(this.earthUmbra);
+    // a faint wireframe edge so the cone reads clearly against space
+    this.earthUmbra.add(new THREE.Mesh(new THREE.ConeGeometry(earthSize * 0.98, this._umbraLen, 4, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x9fb0e0, transparent: true, opacity: 0.22, wireframe: true, depthWrite: false })));
+    this.moonUmbra = new THREE.Mesh(new THREE.ConeGeometry(0.06, 1.15, 24, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0x5a6aa0, transparent: true, opacity: 0.42, side: THREE.DoubleSide, depthWrite: false }));
+    this.moonUmbra.visible = false;
+    this.eclipseGroup.add(this.moonUmbra);
+    this.meshes.earth.add(this.eclipseGroup);
+    this._eclY = new THREE.Vector3(0, 1, 0);
+  },
+
+  updateEclipse(d, moonMesh) {
+    if (!this.eclipseGroup) this.initEclipseCones();
+    const le = lunarEclipse(d), se = solarEclipseGeo(d);
+    if (moonMesh) {                                           // the Moon reddens inside the umbra, in any view
+      if (le && le.umbral) {
+        const im = le.immersion;
+        moonMesh.material.color.copy(new THREE.Color(0xffffff)).lerp(new THREE.Color(0x8a2f16), 0.55 + 0.45 * im);
+      } else moonMesh.material.color.set(0xffffff);
+    }
+    const sys = MOONS[this.focusBody]?.planet || (this.focusBody === 'moon' ? 'earth' : this.focusBody);
+    const show = sys === 'earth' && (le || se);
+    this.eclipseGroup.visible = !!show;
+    if (!show) return;
+    const antiSun = this.meshes.earth.position.clone().normalize();  // Earth node is unrotated → world = local
+    this.earthUmbra.quaternion.setFromUnitVectors(this._eclY, antiSun);
+    this.earthUmbra.position.copy(antiSun).multiplyScalar(this._umbraLen / 2);
+    if (se && moonMesh) {                                     // Moon's shadow spearing toward Earth
+      this.moonUmbra.visible = true;
+      const ml = moonMesh.position, len = ml.length(), mdir = ml.clone().negate().normalize();
+      this.moonUmbra.quaternion.setFromUnitVectors(this._eclY, mdir);
+      this.moonUmbra.position.copy(ml).addScaledVector(mdir, len / 2);
+      this.moonUmbra.scale.y = len / 1.15;
+    } else this.moonUmbra.visible = false;
+  },
+
   update() {
     const d = Sim.d;
     const tgt = this.trueTarget;
@@ -4107,6 +4224,7 @@ const Orrery = {
       const ang = Math.atan2(m.y, m.x);
       moonMesh.position.set(Math.cos(ang) * 1.15, m.z / m.r * 0.3, -Math.sin(ang) * 1.15);
     }
+    this.updateEclipse(d, moonMesh);
     // Glide toward the focused body and travel with it as it orbits
     // (suspended while the Cinematic Tour drives the camera directly)
     if (!this.tourActive) {
@@ -4327,6 +4445,230 @@ const eqToVec = (raRad, decRad, r) => new THREE.Vector3(
   r * Math.sin(decRad)
 );
 
+// Messier catalog: [num, raDeg, decDeg, mag, type, family, commonName, fact]
+// Positions/mag/type from ofrohn/d3-celestial (BSD); names & facts curated.
+const MESSIER = [
+  [1,83.633,22.015,8.4,"Supernova remnant","nebula","Crab Nebula","Wreckage of a supernova seen exploding in 1054 AD; a pulsar spins 30x a second at its heart."],
+  [2,323.363,-0.823,6.3,"Globular cluster","cluster","","A rich globular of ~150,000 stars, 55,000 light-years away in Aquarius."],
+  [3,205.548,28.377,6.2,"Globular cluster","cluster","","Half a million stars bound in a sphere; one of the sky’s finest globulars."],
+  [4,245.897,-26.526,5.9,"Globular cluster","cluster","","The closest globular cluster to us, ~7,200 light-years away, easy to resolve into stars."],
+  [5,229.638,2.081,6.65,"Globular cluster","cluster","",""],
+  [6,265.083,-32.253,4.2,"Open cluster","cluster","Butterfly Cluster","An open cluster whose stars trace the outline of a butterfly."],
+  [7,268.463,-34.793,3.3,"Open cluster","cluster","Ptolemy Cluster","Noted by Ptolemy in 130 AD; a bright naked-eye scatter of stars in Scorpius’ sting."],
+  [8,270.8,-24.38,6.0,"Nebula","nebula","Lagoon Nebula","A vast glowing stellar nursery in Sagittarius, visible to the naked eye from dark skies."],
+  [9,259.799,-18.516,8.42,"Globular cluster","cluster","",""],
+  [10,254.288,-4.1,6.4,"Globular cluster","cluster","",""],
+  [11,282.771,-6.27,6.3,"Open cluster","cluster","Wild Duck Cluster","A dense open cluster whose brightest stars form a flying-V, like ducks in flight."],
+  [12,251.809,-1.949,7.68,"Globular cluster","cluster","",""],
+  [13,250.423,36.461,5.8,"Globular cluster","cluster","Hercules Cluster","The finest globular in northern skies — 300,000 stars, target of the 1974 Arecibo message."],
+  [14,264.401,-3.246,8.32,"Globular cluster","cluster","",""],
+  [15,322.493,12.167,6.3,"Globular cluster","cluster","",""],
+  [16,274.7,-13.807,5.9,"Nebula","nebula","Eagle Nebula","Home of the \"Pillars of Creation\" made famous by Hubble and JWST."],
+  [17,275.196,-16.172,6.0,"Nebula","nebula","Omega Nebula","A brilliant star-forming cloud, also called the Swan or Horseshoe Nebula."],
+  [18,274.992,-17.102,6.9,"Open cluster","cluster","",""],
+  [19,255.657,-26.268,7.47,"Globular cluster","cluster","",""],
+  [20,270.675,-22.972,6.3,"Nebula","nebula","Trifid Nebula","Dark dust lanes split this nebula into three, mixing pink emission and blue reflection."],
+  [21,271.054,-22.49,5.9,"Open cluster","cluster","",""],
+  [22,279.1,-23.905,5.1,"Globular cluster","cluster","",""],
+  [23,269.267,-18.985,5.5,"Open cluster","cluster","",""],
+  [24,274.2,-18.55,4.6,"Open cluster","cluster","",""],
+  [25,277.946,-19.117,4.6,"Open cluster","cluster","",""],
+  [26,281.325,-9.383,8.0,"Open cluster","cluster","",""],
+  [27,299.902,22.721,7.4,"Planetary nebula","nebula","Dumbbell Nebula","The first planetary nebula ever discovered (1764) — a dying Sun-like star’s shed shell."],
+  [28,276.137,-24.87,7.66,"Globular cluster","cluster","",""],
+  [29,305.983,38.523,6.6,"Open cluster","cluster","",""],
+  [30,325.092,-23.18,7.7,"Globular cluster","cluster","",""],
+  [31,10.685,41.269,3.44,"Spiral galaxy","galaxy","Andromeda Galaxy","The nearest large galaxy, 2.5 million light-years away and on a collision course with us."],
+  [32,10.674,40.865,8.08,"Elliptical galaxy","galaxy","","A compact dwarf elliptical galaxy, a satellite of Andromeda."],
+  [33,23.462,30.66,5.72,"Spiral galaxy","galaxy","Triangulum Galaxy","A face-on spiral, third-largest in the Local Group; a naked-eye challenge under dark skies."],
+  [34,40.521,42.762,5.2,"Open cluster","cluster","",""],
+  [35,92.225,24.333,5.1,"Open cluster","cluster","",""],
+  [36,84.075,34.14,6.0,"Open cluster","cluster","",""],
+  [37,88.075,32.553,5.6,"Open cluster","cluster","",""],
+  [38,82.179,35.855,6.4,"Open cluster","cluster","",""],
+  [39,322.95,48.433,4.6,"Open cluster","cluster","",""],
+  [40,185.552,58.083,8.4,"Double star","cluster","",""],
+  [41,101.504,-20.757,4.5,"Open cluster","cluster","",""],
+  [42,83.822,-5.391,4.0,"Nebula","nebula","Orion Nebula","The brightest nebula in the sky and the nearest massive star-forming region, naked-eye visible."],
+  [43,83.879,-5.27,9.0,"Nebula","nebula","De Mairan’s Nebula","A detached part of the Orion Nebula, split off by a dark dust lane."],
+  [44,130.1,19.667,3.1,"Open cluster","cluster","Beehive Cluster","A naked-eye swarm of a thousand stars in Cancer, known since antiquity."],
+  [45,56.75,24.117,1.2,"Open cluster","cluster","Pleiades","The Seven Sisters — hot blue stars wrapped in wispy reflection nebulosity."],
+  [46,115.442,-14.81,6.1,"Open cluster","cluster","",""],
+  [47,114.146,-14.483,4.4,"Open cluster","cluster","",""],
+  [48,123.429,-5.75,5.8,"Open cluster","cluster","",""],
+  [49,187.445,8.0,8.3,"Elliptical galaxy","galaxy","",""],
+  [50,105.698,-8.338,5.9,"Open cluster","cluster","",""],
+  [51,202.47,47.195,8.1,"Spiral galaxy","galaxy","Whirlpool Galaxy","A classic grand-design spiral caught interacting with a smaller companion galaxy."],
+  [52,351.2,61.593,6.9,"Open cluster","cluster","",""],
+  [53,198.23,18.168,7.7,"Globular cluster","cluster","",""],
+  [54,283.764,-30.48,7.7,"Globular cluster","cluster","",""],
+  [55,294.999,-30.965,7.42,"Globular cluster","cluster","",""],
+  [56,289.148,30.183,8.4,"Globular cluster","cluster","",""],
+  [57,283.396,33.029,8.8,"Planetary nebula","nebula","Ring Nebula","A glowing smoke ring — the shed atmosphere of a dying star in Lyra."],
+  [58,189.432,11.818,9.66,"Galaxy","galaxy","",""],
+  [59,190.51,11.647,10.6,"Elliptical galaxy","galaxy","",""],
+  [60,190.917,11.553,9.8,"Elliptical galaxy","galaxy","",""],
+  [61,185.479,4.474,9.65,"Galaxy","galaxy","",""],
+  [62,255.303,-30.112,7.39,"Globular cluster","cluster","",""],
+  [63,198.956,42.029,8.59,"Spiral galaxy","galaxy","Sunflower Galaxy","A spiral galaxy with many short, patchy arms like sunflower petals."],
+  [64,194.182,21.683,8.52,"Spiral galaxy","galaxy","Black Eye Galaxy","A dark band of dust in front of its bright core gives it a \"black eye\"."],
+  [65,169.733,13.092,10.25,"Spiral galaxy","galaxy","","A bright spiral, member of the Leo Triplet of galaxies."],
+  [66,170.063,12.991,8.92,"Spiral galaxy","galaxy","","A spiral distorted by gravity, member of the Leo Triplet."],
+  [67,132.825,11.8,6.9,"Open cluster","cluster","",""],
+  [68,189.867,-26.744,7.3,"Globular cluster","cluster","",""],
+  [69,277.846,-32.348,8.31,"Globular cluster","cluster","",""],
+  [70,280.803,-32.292,9.06,"Globular cluster","cluster","",""],
+  [71,298.444,18.779,6.1,"Globular cluster","cluster","",""],
+  [72,313.365,-12.537,9.2,"Globular cluster","cluster","",""],
+  [73,314.75,-12.63,8.9,"Open cluster","cluster","",""],
+  [74,24.174,15.783,9.39,"Spiral galaxy","galaxy","Phantom Galaxy","A ghostly, perfectly symmetric face-on spiral — famously hard to spot."],
+  [75,301.52,-21.922,9.18,"Globular cluster","cluster","",""],
+  [76,25.583,51.575,10.1,"Planetary nebula","nebula","Little Dumbbell","A small, faint planetary nebula in Perseus."],
+  [77,40.67,-0.013,8.87,"Spiral galaxy","galaxy","","A barred spiral and one of the nearest active galaxies, with a blazing black-hole nucleus."],
+  [78,86.695,0.014,8.3,"Reflection nebula","nebula","","The brightest reflection nebula in the sky, glowing blue in Orion."],
+  [79,81.044,-24.524,8.56,"Globular cluster","cluster","",""],
+  [80,244.26,-22.976,7.87,"Globular cluster","cluster","","A dense globular cluster between Antares and the heart of Scorpius."],
+  [81,148.888,69.065,6.94,"Spiral galaxy","galaxy","Bode’s Galaxy","A grand spiral, one of the brightest galaxies in the northern sky."],
+  [82,148.969,69.68,8.41,"Starburst galaxy","galaxy","Cigar Galaxy","A starburst galaxy erupting with new stars, tidally lit by its neighbour M81."],
+  [83,204.254,-29.866,7.54,"Spiral galaxy","galaxy","Southern Pinwheel","A face-on barred spiral, one of the closest and brightest."],
+  [84,186.266,12.887,10.49,"Elliptical galaxy","galaxy","",""],
+  [85,186.35,18.191,10.0,"Elliptical galaxy","galaxy","",""],
+  [86,186.549,12.946,8.9,"Elliptical galaxy","galaxy","",""],
+  [87,187.74,12.27,8.6,"Elliptical galaxy","galaxy","Virgo A","A giant elliptical whose supermassive black hole was the first ever imaged (2019)."],
+  [88,187.997,14.42,9.6,"Galaxy","galaxy","",""],
+  [89,188.916,12.556,9.75,"Galaxy","galaxy","",""],
+  [90,189.208,13.163,9.54,"Galaxy","galaxy","",""],
+  [91,188.86,14.496,10.2,"Spiral galaxy","galaxy","",""],
+  [92,259.281,43.136,6.4,"Globular cluster","cluster","","A bright globular in Hercules, often overshadowed by nearby M13."],
+  [93,116.125,-23.857,6.2,"Open cluster","cluster","",""],
+  [94,192.721,41.12,8.24,"Galaxy","galaxy","","A spiral with a bright inner ring of vigorous star formation."],
+  [95,160.991,11.704,9.73,"Spiral galaxy","galaxy","",""],
+  [96,161.691,11.82,9.25,"Spiral galaxy","galaxy","",""],
+  [97,168.699,55.019,9.9,"Planetary nebula","nebula","Owl Nebula","A planetary nebula whose two dark patches look like an owl’s eyes."],
+  [98,183.451,14.9,10.1,"Spiral galaxy","galaxy","",""],
+  [99,184.707,14.416,9.87,"Spiral galaxy","galaxy","",""],
+  [100,185.729,15.822,9.35,"Spiral galaxy","galaxy","",""],
+  [101,210.802,54.349,7.86,"Spiral galaxy","galaxy","Pinwheel Galaxy","A huge, near-perfect face-on spiral with sprawling, well-defined arms."],
+  [102,226.623,55.763,9.9,"Lenticular galaxy","galaxy","",""],
+  [103,23.346,60.65,7.4,"Open cluster","cluster","","An open cluster in Cassiopeia, the last object in Messier’s original list."],
+  [104,189.998,-11.623,8.0,"Spiral galaxy","galaxy","Sombrero Galaxy","A near edge-on spiral ringed by a dark dust lane, like a wide-brimmed hat."],
+  [105,161.957,12.582,9.76,"Elliptical galaxy","galaxy","",""],
+  [106,184.74,47.304,8.41,"Spiral galaxy","galaxy","",""],
+  [107,248.133,-13.054,8.85,"Globular cluster","cluster","",""],
+  [108,167.879,55.674,10.7,"Spiral galaxy","galaxy","","An edge-on spiral near the Big Dipper, mottled with dust."],
+  [109,179.4,53.375,10.6,"Galaxy","galaxy","",""],
+  [110,10.092,41.685,8.07,"Elliptical galaxy","galaxy","","A dwarf elliptical satellite of the Andromeda Galaxy."]
+];
+
+// Major annual meteor showers. Radiant RA/Dec (deg, J2000), peak date, activity
+// window, ZHR (peak zenithal hourly rate), meteor speed, parent body + a fact.
+// Dates repeat each year to within ~a day. [name, ra, dec, peakM, peakD, sM,sD, eM,eD, zhr, speed, parent, fact]
+const METEOR_SHOWERS = [
+  ['Quadrantids',   230, 49,  1, 3,  12,28, 1,12, 110, 41, 'asteroid 2003 EH₁', 'A sharp, short peak of blue meteors — one of the year’s strongest, but the maximum lasts only hours.'],
+  ['Lyrids',        271, 34,  4,22,  4,16, 4,25,  18, 49, 'Comet Thatcher',     'The oldest recorded shower — Chinese records note it in 687 BC — with occasional bright fireballs.'],
+  ['Eta Aquariids', 338, -1,  5, 6,  4,19, 5,28,  50, 66, 'Comet Halley',       'Fast, glancing meteors from Halley’s dust; best before dawn, superb from the southern hemisphere.'],
+  ['Delta Aquariids',340,-16, 7,30,  7,12, 8,23,  25, 41, 'Comet 96P/Machholz', 'A gentle, drawn-out shower of faint meteors that blends into the early Perseids.'],
+  ['Alpha Capricornids',307,-9,7,30, 7, 3, 8,15,   5, 23, 'Comet 169P/NEAT',    'Few but famously slow and bright — this shower produces striking fireballs.'],
+  ['Perseids',      48, 58,  8,12,  7,17, 8,24, 100, 59, 'Comet Swift–Tuttle', 'The summer favourite — warm nights, up to 100/hr, and many leaving glowing trains.'],
+  ['Orionids',      95, 16, 10,21, 10, 2,11, 7,  20, 66, 'Comet Halley',       'The second gift of Halley’s Comet each year — swift meteors radiating near Orion’s club.'],
+  ['Leonids',      152, 22, 11,17, 11, 6,11,30,  15, 71, 'Comet Tempel–Tuttle','The fastest meteors of all; every ~33 years it can erupt into a legendary storm.'],
+  ['Geminids',     112, 33, 12,14, 12, 4,12,17, 150, 35, 'asteroid 3200 Phaethon','The year’s richest shower — dense, bright, multicoloured meteors from a rock comet.'],
+  ['Ursids',       217, 76, 12,22, 12,17,12,26,  10, 33, 'Comet 8P/Tuttle',    'A sparse solstice shower circling close to the north celestial pole, active all night.'],
+];
+
+// Is a shower active on `date`? Handles windows that wrap the New Year (Quadrantids).
+function showerActiveOn(s, date) {
+  const y = date.getFullYear();
+  const win = (ys, ye) => date >= new Date(ys, s[5] - 1, s[6]) && date <= new Date(ye, s[7] - 1, s[8], 23, 59);
+  const wraps = s[5] > s[7] || (s[5] === s[7] && s[6] > s[8]);
+  return wraps ? (win(y, y + 1) || win(y - 1, y)) : win(y, y);
+}
+// Signed days to the nearest peak (negative = just passed, positive = upcoming).
+function daysToPeak(s, date) {
+  const y = date.getFullYear();
+  let best = Infinity;
+  for (const yr of [y - 1, y, y + 1]) {
+    const dd = (new Date(yr, s[3] - 1, s[4], 22) - date) / 86400000;
+    if (Math.abs(dd) < Math.abs(best)) best = dd;
+  }
+  return best;
+}
+// Alt/az of a fixed RA/Dec (deg) for a given jd + site — for radiant visibility in the Tonight panel.
+function radiantAltAz(raDeg, decDeg, jd, latDeg, lonDeg) {
+  const ra = raDeg * DEG, dec = decDeg * DEG, lat = latDeg * DEG;
+  const H = lstRad(jd, lonDeg) - ra;
+  const alt = Math.asin(Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(H));
+  let az = Math.atan2(Math.sin(H), Math.cos(H) * Math.sin(lat) - Math.tan(dec) * Math.cos(lat));
+  az = (az + Math.PI) % (2 * Math.PI);                       // 0 = North, clockwise
+  return { alt, az };
+}
+
+/* =====================================================================
+   ECLIPSES — a NASA-GSFC catalog for the finder, plus live Sun–Earth–Moon
+   geometry so both views render whatever is really happening at the clock.
+   ===================================================================== */
+const ECLIPSES = [
+  { date: '2026-08-12', peakUTC: '17:47', kind: 'solar', type: 'Total',     note: 'Arctic, Greenland, Iceland, N Spain',              dur: '2m18s' },
+  { date: '2026-08-28', peakUTC: '04:14', kind: 'lunar', type: 'Partial',   note: 'E Pacific, Americas, Europe, Africa' },
+  { date: '2027-02-06', peakUTC: '16:01', kind: 'solar', type: 'Annular',   note: 'Chile, Argentina, S Atlantic; S America & Africa', dur: '7m51s' },
+  { date: '2027-02-20', peakUTC: '23:14', kind: 'lunar', type: 'Penumbral', note: 'Americas, Europe, Africa, Asia' },
+  { date: '2027-07-18', peakUTC: '16:04', kind: 'lunar', type: 'Penumbral', note: 'E Africa, Asia, Australia, Pacific' },
+  { date: '2027-08-02', peakUTC: '10:08', kind: 'solar', type: 'Total',     note: 'Spain, Morocco, Algeria, Libya, Egypt, Arabia',    dur: '6m23s' },
+  { date: '2027-08-17', peakUTC: '07:15', kind: 'lunar', type: 'Penumbral', note: 'Pacific, Americas' },
+  { date: '2028-01-12', peakUTC: '04:14', kind: 'lunar', type: 'Partial',   note: 'Americas, Europe, Africa' },
+  { date: '2028-01-26', peakUTC: '15:09', kind: 'solar', type: 'Annular',   note: 'Ecuador, Peru, Brazil, Spain, Portugal',           dur: '10m27s' },
+  { date: '2028-07-06', peakUTC: '18:21', kind: 'lunar', type: 'Partial',   note: 'Europe, Africa, Asia, Australia' },
+  { date: '2028-07-22', peakUTC: '02:57', kind: 'solar', type: 'Total',     note: 'Australia and New Zealand',                        dur: '5m10s' },
+  { date: '2028-12-31', peakUTC: '16:53', kind: 'lunar', type: 'Total',     note: 'Europe, Africa, Asia, Australia, Pacific' },
+  { date: '2029-01-14', peakUTC: '17:14', kind: 'solar', type: 'Partial',   note: 'North and Central America' },
+  { date: '2029-06-12', peakUTC: '04:06', kind: 'solar', type: 'Partial',   note: 'Arctic, Scandinavia, Alaska, N Asia, N Canada' },
+  { date: '2029-06-26', peakUTC: '03:23', kind: 'lunar', type: 'Total',     note: 'Americas, Europe, Africa, Middle East' },
+  { date: '2029-07-11', peakUTC: '15:37', kind: 'solar', type: 'Partial',   note: 'Southern Chile and Argentina' },
+  { date: '2029-12-05', peakUTC: '15:04', kind: 'solar', type: 'Partial',   note: 'Southern Argentina, Chile, Antarctica' },
+  { date: '2029-12-20', peakUTC: '22:43', kind: 'lunar', type: 'Total',     note: 'Americas, Europe, Africa, Asia' },
+  { date: '2030-06-01', peakUTC: '06:29', kind: 'solar', type: 'Annular',   note: 'Algeria, Greece, Turkey, Russia, N China, Japan',  dur: '5m21s' },
+  { date: '2030-06-15', peakUTC: '18:35', kind: 'lunar', type: 'Partial',   note: 'Europe, Africa, Asia, Australia' },
+  { date: '2030-11-25', peakUTC: '06:52', kind: 'solar', type: 'Total',     note: 'Botswana, S Africa, S Indian Ocean, Australia',    dur: '3m44s' },
+  { date: '2030-12-09', peakUTC: '22:29', kind: 'lunar', type: 'Penumbral', note: 'Americas, Europe, Africa, Asia' },
+  { date: '2031-05-21', peakUTC: '07:16', kind: 'solar', type: 'Annular',   note: 'Angola, Zambia, Tanzania, S India, Malaysia',      dur: '5m26s' },
+  { date: '2031-11-14', peakUTC: '21:08', kind: 'solar', type: 'Hybrid',    note: 'Pacific, Panama, S US, C America, NW S America',    dur: '1m8s' },
+];
+
+// Live geocentric Sun–Earth–Moon geometry (angles in radians) for day-number d.
+function eclipseGeom(d) {
+  const s = sunGeo(d), m = moonGeo(d);
+  const su = new THREE.Vector3(s.x, s.y, s.z).multiplyScalar(1 / s.r);
+  const mu = new THREE.Vector3(m.x, m.y, m.z).multiplyScalar(1 / m.r);
+  const moonKm = m.r * 1.495979e8;                                   // moonGeo returns AU
+  const E = Math.acos(Math.max(-1, Math.min(1, su.dot(mu))));         // Sun–Earth–Moon elongation
+  const rhoS = Math.asin(696000 / (s.r * 1.495979e8));               // Sun angular radius
+  const rhoM = Math.asin(1737.4 / moonKm);                           // Moon angular radius
+  const piM = Math.asin(6371 / moonKm);                              // Moon horizontal parallax
+  const rhoUmbra = 1.02 * (piM + 4.263e-5 - rhoS);                   // Earth umbra radius at Moon
+  const rhoPenumbra = 1.02 * (piM + 4.263e-5 + rhoS);
+  return { E, rhoS, rhoM, rhoUmbra, rhoPenumbra, gamma: Math.PI - E, sun: s, moon: m, su, mu };
+}
+// Lunar eclipse (essentially identical for every observer on Earth's night side).
+function lunarEclipse(d) {
+  const g = eclipseGeom(d);
+  const umbralMag = (g.rhoUmbra + g.rhoM - g.gamma) / (2 * g.rhoM);
+  const penMag = (g.rhoPenumbra + g.rhoM - g.gamma) / (2 * g.rhoM);
+  if (penMag <= 0.02) return null;
+  return { umbralMag, penMag, total: umbralMag >= 1, umbral: umbralMag > 0,
+           immersion: Math.max(0, Math.min(1, umbralMag)) };
+}
+// Solar eclipse as seen from Earth's centre (an eclipse is happening *somewhere*).
+function solarEclipseGeo(d) {
+  const g = eclipseGeom(d);
+  const piM = Math.asin(6371 / (g.moon.r * 1.495979e8));             // Moon horizontal parallax (moon.r is AU)
+  const reach = g.rhoS + g.rhoM + piM;                              // parallax lets the shadow reach the limb
+  if (g.E > reach) return null;
+  return { mag: Math.max(0, (g.rhoS + g.rhoM - g.E) / (2 * g.rhoS)),
+           central: g.E < Math.abs(g.rhoM - g.rhoS), g };
+}
+// Parse a catalog entry's greatest-eclipse instant (UTC) to epoch ms.
+function eclipseMs(e) { return Date.parse(e.date + 'T' + e.peakUTC + ':00Z'); }
+
 // Procedural Milky Way: ~10k faint additive points along the true galactic
 // plane (gal→eq J2000 rotation), denser & warmer toward the Sagittarius core,
 // with the Great Rift dust lane. Shared by Sky View and the orrery backdrop.
@@ -4449,6 +4791,9 @@ const Sky = {
   starNameGroup: null, bodySprites: {}, ground: null, horizon: null,
   viewAz: (Loc.heading ?? 90) * DEG, viewAlt: 28 * DEG, _labelFade: -1,
   showConst: true, showConstNames: true, showStarNames: true, showGround: true, atmosphere: false, showISS: true, showMW: true,
+  showDSO: true, showDSONames: true, dsoGroup: null, dsoLabelGroup: null, _dsoMats: null,
+  showMeteors: true, radiantGroup: null, meteorGroup: null, _meteors: [], _mLast: 0, _meteorAccum: 0, _showerT: 0,
+  coronaSprite: null, eclipseDisk: null, _moonBaseColor: 0xe8ecf4, _eclBannerState: '',
 
   init() {
     const host = document.getElementById('sky-canvas');
@@ -4498,6 +4843,9 @@ const Sky = {
     }
 
     this.addMilkyWay();
+    this.buildMessier();
+    this.buildMeteors();
+    this.initEclipseFX();
 
     // Named-star labels
     this.starNameGroup = new THREE.Group();
@@ -4547,8 +4895,10 @@ const Sky = {
       this._resetTarget = null;
       this._clearFollow();
       if (this.gyroActive) this._stopGyro();                 // manual touch takes over
-      if (pointers.size === 1) { dragging = true; px = e.clientX; py = e.clientY; }
-      else { dragging = false; lastPinch = 0; }
+      if (pointers.size === 1) {
+        dragging = true; px = e.clientX; py = e.clientY;
+        this._downXY = [e.clientX, e.clientY]; this._gestureMulti = false;
+      } else { dragging = false; lastPinch = 0; this._gestureMulti = true; }
     });
     el.addEventListener('pointermove', e => {
       if (pointers.has(e.pointerId)) pointers.set(e.pointerId, [e.clientX, e.clientY]);
@@ -4569,7 +4919,16 @@ const Sky = {
       this.viewAlt = Math.max(-0.35, Math.min(Math.PI / 2 - 0.01, this.viewAlt));
       px = e.clientX; py = e.clientY;
     });
-    const endPointer = e => { pointers.delete(e.pointerId); dragging = false; lastPinch = 0; };
+    const endPointer = e => {
+      const wasLast = pointers.size === 1;                   // this pointer is the last one up
+      pointers.delete(e.pointerId);
+      if (e.type === 'pointerup' && wasLast && !this._gestureMulti && this._downXY) {
+        const moved = Math.hypot(e.clientX - this._downXY[0], e.clientY - this._downXY[1]);
+        if (moved < 6) this._pickDSO(e);                     // a tap, not a drag → try to select a DSO
+      }
+      this._downXY = null;
+      dragging = false; lastPinch = 0;
+    };
     el.addEventListener('pointerup', endPointer);
     el.addEventListener('pointercancel', endPointer);
     el.addEventListener('wheel', e => {
@@ -4585,6 +4944,12 @@ const Sky = {
     tonightBtn.innerHTML = `<span style="font-size:12px;line-height:0">✨</span>Tonight`;
     tonightBtn.onclick = () => showTonight();
     document.getElementById('sky-toggles').appendChild(tonightBtn);
+
+    const eclBtn = document.createElement('button');
+    eclBtn.className = 'toggle-pill';
+    eclBtn.innerHTML = `<span style="font-size:12px;line-height:0">🌘</span>Eclipses`;
+    eclBtn.onclick = () => showEclipseFinder('sky-info');
+    document.getElementById('sky-toggles').appendChild(eclBtn);
 
     // Focus dropdown — glide to and track a solar-system body
     const focusSel = document.createElement('select');
@@ -4625,8 +4990,23 @@ const Sky = {
     buildToggles('sky-toggles', [
       { label: 'Milky Way', get: () => this.showMW, set: v => { this.showMW = v; this.mwGroup.visible = v; } },
       { label: 'Constellations', get: () => this.showConst, set: v => { this.showConst = v; if (this.lineGroup) this.lineGroup.visible = v; } },
-      { label: 'Constellation names', get: () => this.showConstNames, set: v => { this.showConstNames = v; if (this.constLabelGroup) this.constLabelGroup.visible = v; } },
-      { label: 'Star names', get: () => this.showStarNames, set: v => { this.showStarNames = v; this.starNameGroup.visible = v; } },
+      { label: 'Constellation names', get: () => this.showConstNames, set: v => { this.showConstNames = v; this._setLabelsVisible(this.constLabelGroup, v); } },
+      { label: 'Star names', get: () => this.showStarNames, set: v => { this.showStarNames = v; this._setLabelsVisible(this.starNameGroup, v); } },
+      { label: 'Deep sky (Messier)', get: () => this.showDSO, set: v => {
+          this.showDSO = v;
+          if (this.dsoGroup) this.dsoGroup.visible = v;
+          this._setLabelsVisible(this.dsoLabelGroup, v && this.showDSONames);
+        } },
+      { label: 'Deep-sky names', get: () => this.showDSONames, set: v => {
+          this.showDSONames = v;
+          this._setLabelsVisible(this.dsoLabelGroup, v && this.showDSO);
+        } },
+      { label: 'Meteor showers', get: () => this.showMeteors, set: v => {
+          this.showMeteors = v;
+          if (this.radiantGroup) this.radiantGroup.visible = v;
+          if (this.meteorGroup) this.meteorGroup.visible = v;
+          this._showerT = 0;                                   // force a radiant refresh next frame
+        } },
       { label: 'Ground', get: () => this.showGround, set: v => { this.showGround = v; this.ground.visible = v; } },
       { label: 'Atmosphere', get: () => this.atmosphere, set: v => { this.atmosphere = v; } },
       { label: 'ISS', get: () => this.showISS, set: v => {
@@ -4683,6 +5063,322 @@ const Sky = {
         this.group.add(new THREE.Points(geo, gmat));           // shares the bin geometry
       }
     }
+  },
+
+  // Deep-sky objects: the 110 Messier targets as clickable glyphs on the sphere,
+  // one shared material per family so they fade together with the stars in twilight.
+  buildMessier() {
+    const famColor = { galaxy: 0xffe4bd, cluster: 0xcbe0ff, nebula: 0x8fe6c9 };
+    this._dsoMats = {};
+    for (const k of Object.keys(DSO_TEX)) {
+      const mat = new THREE.SpriteMaterial({
+        map: DSO_TEX[k], color: famColor[k], transparent: true, depthWrite: false, opacity: 0.85,
+      });
+      mat.userData.baseOpacity = 0.85;
+      this._dsoMats[k] = mat;
+    }
+    this.dsoGroup = new THREE.Group();
+    this.dsoLabelGroup = new THREE.Group();
+    for (const row of MESSIER) {
+      const [m, ra, dec, mag, type, family, name, fact] = row;
+      const s = new THREE.Sprite(this._dsoMats[family] || this._dsoMats.nebula);
+      s.scale.setScalar(Math.max(9, Math.min(22, 20 - mag * 1.15)));  // brighter → bigger glyph
+      s.position.copy(eqToVec(ra * DEG, dec * DEG, SKY_R * 0.98));
+      s.userData.dso = { m, ra, dec, mag, type, family, name, fact };
+      this.dsoGroup.add(s);
+      if (name) {
+        const l = makeLabel(name, 'dso-name');
+        l.position.copy(eqToVec(ra * DEG, dec * DEG, SKY_R * 0.966));
+        this.dsoLabelGroup.add(l);
+      }
+    }
+    this.dsoGroup.visible = this.showDSO;
+    this.dsoLabelGroup.visible = this.showDSO && this.showDSONames;
+    this.group.add(this.dsoGroup);
+    this.group.add(this.dsoLabelGroup);
+  },
+
+  // Toggle a group of CSS2D labels. three's CSS2DRenderer only honours each
+  // label's OWN .visible (it ignores ancestor group visibility), so set both.
+  _setLabelsVisible(group, v) {
+    if (!group) return;
+    group.visible = v;
+    for (const l of group.children) l.visible = v;
+  },
+
+  // Alt/az of a point given in the sphere's local (equatorial) frame — reuses the
+  // live group rotation, same convention as _bodyAltAz.
+  _eqAltAz(localVec) {
+    const w = localVec.clone().applyQuaternion(this.group.quaternion);
+    const r = w.length();
+    return { alt: Math.asin(w.y / r), az: Math.atan2(w.x, -w.z) };
+  },
+
+  // Screen-space nearest-hit pick against the DSO glyphs (sprites are tiny, so a
+  // pixel-radius search is far more forgiving than a ray through the quad).
+  _pickDSO(e) {
+    if (!this.dsoGroup || !this.showDSO) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    const px = e.clientX - rect.left, py = e.clientY - rect.top;
+    const camDir = this.camera.getWorldDirection(new THREE.Vector3());
+    let best = null, bestD = 22;                              // px tolerance
+    for (const s of this.dsoGroup.children) {
+      const w = s.position.clone().applyQuaternion(this.group.quaternion);
+      if (w.clone().normalize().dot(camDir) <= 0.1) continue; // behind / far off-axis
+      w.project(this.camera);
+      const sx = (w.x * 0.5 + 0.5) * rect.width, sy = (-w.y * 0.5 + 0.5) * rect.height;
+      const dd = Math.hypot(sx - px, sy - py);
+      if (dd < bestD) { bestD = dd; best = s; }
+    }
+    if (best) this.openDSOCard(best);
+  },
+
+  openDSOCard(sprite) {
+    const o = sprite.userData.dso;
+    const card = document.getElementById('sky-info');
+    const aa = this._eqAltAz(sprite.position);
+    const altDeg = aa.alt / DEG, azDeg = ((aa.az / DEG) % 360 + 360) % 360;
+    let raH = o.ra / 15, rh = Math.floor(raH), rm = Math.round((raH - rh) * 60);
+    if (rm === 60) { rm = 0; rh = (rh + 1) % 24; }            // carry rounded minutes
+    const dSign = o.dec < 0 ? '−' : '+', da = Math.abs(o.dec);
+    let dd = Math.floor(da), dmn = Math.round((da - dd) * 60);
+    if (dmn === 60) { dmn = 0; dd += 1; }
+    const dir = HEADING_NAMES[Math.round(azDeg / 45) % 8];
+    const horizon = altDeg > 0
+      ? `${Math.round(altDeg)}° up · ${dir}`
+      : `${Math.round(Math.abs(altDeg))}° below horizon`;
+    const title = o.name || `Messier ${o.m}`;
+    const sub = o.name ? `Messier ${o.m} · ${o.type}` : `${o.type} · M${o.m}`;
+    card.innerHTML = `<button class="close">×</button><h3>${title}</h3>
+      <div class="kind">${sub}</div>
+      <div class="row"><span class="k">Magnitude</span><span class="v">${o.mag < 90 ? o.mag.toFixed(1) : '—'}</span></div>
+      <div class="row"><span class="k">RA / Dec</span><span class="v">${rh}h ${pad(rm)}m · ${dSign}${dd}° ${pad(dmn)}′</span></div>
+      <div class="row"><span class="k">Right now</span><span class="v">${horizon}</span></div>
+      ${o.fact ? `<div class="fact">${o.fact}</div>` : ''}
+      <button class="ask-action" id="dso-point">Point at it ▸</button>`;
+    card.querySelector('.close').onclick = () => card.classList.remove('open');
+    card.querySelector('#dso-point').onclick = () => {
+      this._clearFollow();
+      const a = this._eqAltAz(sprite.position);
+      this._resetTarget = { az: a.az, alt: Math.max(-0.2, Math.min(Math.PI / 2 - 0.02, a.alt)), fov: 42 };
+      card.classList.remove('open');
+    };
+    card.classList.add('open');
+  },
+
+  // Meteor showers: a radiant marker + label per shower (shown only while active
+  // and above the horizon) plus a pool of animated streaks emanating from them.
+  buildMeteors() {
+    this.radiantGroup = new THREE.Group();
+    this.meteorGroup = new THREE.Group();
+    for (const s of METEOR_SHOWERS) {
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: RADIANT_TEX, color: 0xffd59a, transparent: true, opacity: 0.9, depthWrite: false,
+      }));
+      spr.scale.setScalar(16);
+      spr.position.copy(eqToVec(s[1] * DEG, s[2] * DEG, SKY_R * 0.99));
+      const label = makeLabel(s[0], 'radiant-name');
+      label.position.copy(eqToVec(s[1] * DEG, s[2] * DEG, SKY_R * 0.975));
+      spr.userData = { shower: s, label, active: false };
+      spr.visible = false; label.visible = false;
+      this.radiantGroup.add(spr);
+      this.radiantGroup.add(label);
+    }
+    this.radiantGroup.visible = this.showMeteors;
+    this.group.add(this.radiantGroup);
+    this.group.add(this.meteorGroup);
+  },
+
+  // Refresh which radiants are "active" for the current sim date (throttled).
+  _updateRadiants() {
+    if (!this.radiantGroup) return;
+    const date = Sim.date;
+    for (const spr of this.radiantGroup.children) {
+      if (!spr.isSprite) continue;
+      const s = spr.userData.shower;
+      const on = this.showMeteors && showerActiveOn(s, date);
+      const aa = this._eqAltAz(spr.position);
+      const up = aa.alt > -8 * DEG;                            // radiant near or above the horizon
+      const show = on && up;
+      spr.userData.active = on && aa.alt > 2 * DEG;            // spawn meteors only when comfortably up
+      spr.visible = show;
+      spr.userData.label.visible = show;
+    }
+  },
+
+  _spawnMeteor(radiantSprite) {
+    const rad = radiantSprite.position.clone().normalize();
+    let a = new THREE.Vector3(0, 1, 0);
+    if (Math.abs(rad.y) > 0.9) a.set(1, 0, 0);
+    const tan = a.sub(rad.clone().multiplyScalar(rad.dot(a))).normalize();
+    const bit = new THREE.Vector3().crossVectors(rad, tan);
+    const ang = Math.random() * Math.PI * 2;                  // random great circle through the radiant
+    const dir = tan.multiplyScalar(Math.cos(ang)).add(bit.multiplyScalar(Math.sin(ang))).normalize();
+    const geo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+    const mat = new THREE.LineBasicMaterial({
+      color: 0xfff2d6, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const line = new THREE.Line(geo, mat);
+    this.meteorGroup.add(line);
+    this._meteors.push({
+      line, rad, dir,
+      theta0: (8 + Math.random() * 34) * DEG,                 // start distance from radiant
+      arc: (16 + Math.random() * 22) * DEG,                   // how far it travels
+      streak: (5 + Math.random() * 9) * DEG,                  // visible streak length
+      t: 0, life: 0.45 + Math.random() * 0.65,
+    });
+  },
+
+  _animateMeteors(now, starFade) {
+    if (!this.meteorGroup) return;
+    const dt = this._mLast ? Math.min(0.08, (now - this._mLast) / 1000) : 0;
+    this._mLast = now;
+    const dark = this.atmosphere ? starFade > 0.55 : true;    // no meteors in a bright twilight sky
+    if (this.showMeteors && dark) {
+      let rate = 0; const sources = [];
+      for (const spr of this.radiantGroup.children) {
+        if (!spr.isSprite || !spr.userData.active) continue;
+        const aa = this._eqAltAz(spr.position);
+        const w = spr.userData.shower[9] * (0.35 + 0.65 * Math.sin(Math.min(Math.PI / 2, aa.alt)));
+        rate += w; sources.push({ spr, w });
+      }
+      this._meteorAccum += dt * (rate / 320);                 // ZHR 100, radiant high ≈ 1 streak / ~3 s
+      while (this._meteorAccum >= 1 && this._meteors.length < 40 && sources.length) {
+        this._meteorAccum -= 1;
+        let x = Math.random() * rate, pick = sources[0];
+        for (const so of sources) { x -= so.w; if (x <= 0) { pick = so; break; } }
+        this._spawnMeteor(pick.spr);
+      }
+    } else {
+      this._meteorAccum = 0;
+    }
+    for (let i = this._meteors.length - 1; i >= 0; i--) {
+      const mo = this._meteors[i];
+      mo.t += dt;
+      const k = mo.t / mo.life;
+      if (k >= 1) {
+        this.meteorGroup.remove(mo.line);
+        mo.line.geometry.dispose(); mo.line.material.dispose();
+        this._meteors.splice(i, 1);
+        continue;
+      }
+      const head = mo.theta0 + mo.arc * k;
+      const tail = head - mo.streak;
+      const ph = mo.rad.clone().multiplyScalar(Math.cos(head)).addScaledVector(mo.dir, Math.sin(head)).multiplyScalar(SKY_R * 0.985);
+      const pt = mo.rad.clone().multiplyScalar(Math.cos(tail)).addScaledVector(mo.dir, Math.sin(tail)).multiplyScalar(SKY_R * 0.985);
+      const pos = mo.line.geometry.attributes.position;
+      pos.setXYZ(0, pt.x, pt.y, pt.z); pos.setXYZ(1, ph.x, ph.y, ph.z);
+      pos.needsUpdate = true;
+      mo.line.material.opacity = Math.sin(Math.PI * k) * 0.95;
+    }
+  },
+
+  // Glide the view to a shower's radiant (from the Tonight panel).
+  pointAtRadiant(name) {
+    const spr = this.radiantGroup && this.radiantGroup.children.find(c => c.isSprite && c.userData.shower[0] === name);
+    if (!spr) return;
+    if (!this.showMeteors) {                                  // make sure meteors are on so the user sees the show
+      this.showMeteors = true;
+      this.radiantGroup.visible = true; this.meteorGroup.visible = true; this._showerT = 0;
+      const pill = [...document.querySelectorAll('#sky-toggles .toggle-pill')].find(p => p.textContent.includes('Meteor showers'));
+      if (pill) pill.classList.add('on');
+    }
+    const aa = this._eqAltAz(spr.position);
+    this._clearFollow();
+    this._resetTarget = { az: aa.az, alt: Math.max(-0.2, Math.min(Math.PI / 2 - 0.02, aa.alt)), fov: 55 };
+  },
+
+  // Solar-eclipse overlay: a corona halo + a dark Moon silhouette, both hidden
+  // until the Moon's disk overlaps the Sun's from this location.
+  initEclipseFX() {
+    this.coronaSprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: CORONA_TEX, color: 0xfff4df, transparent: true, opacity: 0,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    this.coronaSprite.renderOrder = 4; this.coronaSprite.visible = false;
+    this.eclipseDisk = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: hardDotTex, color: 0x05070c, transparent: true, opacity: 1, depthWrite: false,
+    }));
+    this.eclipseDisk.renderOrder = 5; this.eclipseDisk.visible = false;
+    this.group.add(this.coronaSprite, this.eclipseDisk);
+  },
+
+  // Local solar-disk coverage (0–1) using the topocentric Moon vs Sun on the sphere,
+  // plus the (whole-Earth) lunar-eclipse state. Called each frame from update().
+  _eclipseState(d) {
+    const sun = this.bodySprites.sun.position, moon = this.bodySprites.moon.position;
+    const sep = sun.angleTo(moon);
+    const rhoS = Math.asin(696000 / (sunGeo(d).r * 1.495979e8));
+    const rhoM = Math.asin(1737.4 / (moonGeo(d).r * 1.495979e8));
+    const sunUp = sun.clone().applyQuaternion(this.group.quaternion).y > -0.02 * SKY_R;
+    let cov = 0;
+    if (sunUp && sep < rhoS + rhoM) cov = Math.min(1, (rhoS + rhoM - sep) / (2 * rhoS));
+    return { cov, ratio: rhoM / rhoS, rhoS, lunar: lunarEclipse(d) };
+  },
+
+  _applyEclipseVisuals(ecl) {
+    // Moon: coppery-red while inside Earth's umbra, otherwise its normal tone
+    const moonMat = this.bodySprites.moon.material, le = ecl.lunar;
+    if (le && le.umbral) {
+      const im = le.immersion;
+      moonMat.color.copy(new THREE.Color(this._moonBaseColor)).lerp(new THREE.Color(0x7a2a12), 0.45 + 0.55 * im);
+      this.moonLight.intensity = 5.5 * (1 - 0.7 * im);
+    } else {
+      moonMat.color.set(this._moonBaseColor);
+      this.moonLight.intensity = 5.5;
+    }
+    // Sun occulted by the Moon. The disks are drawn ~7× their true angular size, so
+    // the real Sun–Moon separation is scaled up by the same factor to keep the
+    // geometry honest — a partial reads as a crescent, only totality as a corona.
+    const cov = ecl.cov, sunSpr = this.bodySprites.sun, sunSize = SKY_BODIES.sun.size;
+    if (cov > 0.02) {
+      const rhoS = ecl.rhoS;
+      const sun = sunSpr.position, moon = this.bodySprites.moon.position;
+      const sep = sun.angleTo(moon);
+      const scaleF = (sunSize / 2) / rhoS;                    // scene units per radian of apparent size
+      const dir = moon.clone().sub(sun).normalize();
+      sunSpr.material.opacity = 1;                            // the Sun disk stays; the Moon disk hides it
+      this.eclipseDisk.visible = true;
+      this.eclipseDisk.position.copy(sun).addScaledVector(dir, sep * scaleF);
+      this.eclipseDisk.scale.setScalar(sunSize * Math.max(0.6, ecl.ratio) * 1.03);
+      const totality = Math.max(0, (cov - 0.9) / 0.1);        // corona only in the last 10%
+      this.coronaSprite.visible = totality > 0;
+      if (totality > 0) {
+        this.coronaSprite.position.copy(sun);
+        this.coronaSprite.scale.setScalar(sunSize * (1.7 + 1.1 * totality));
+        this.coronaSprite.material.opacity = totality;
+      }
+    } else {
+      sunSpr.material.opacity = 1;
+      this.coronaSprite.visible = false;
+      this.eclipseDisk.visible = false;
+    }
+    this._eclipseBanner(ecl);
+  },
+
+  _eclipseBanner(ecl) {
+    let msg = '';
+    const le = ecl.lunar;
+    if (ecl.cov > 0.02) {
+      msg = ecl.cov >= 0.99
+        ? (ecl.ratio >= 1 ? '🌑 Total solar eclipse · totality' : '🌑 Annular solar eclipse · ring of fire')
+        : `🌘 Solar eclipse · ${Math.round(ecl.cov * 100)}% of the Sun covered`;
+    } else if (le && le.umbral) {
+      msg = le.total ? '🌑 Total lunar eclipse · the Moon is deep in Earth’s shadow'
+                     : `🌗 Partial lunar eclipse · ${Math.round(le.umbralMag * 100)}% in the umbra`;
+    } else if (le && le.penMag > 0.25) {
+      msg = '🌘 Penumbral lunar eclipse · a soft shading of the Moon';
+    }
+    if (msg === this._eclBannerState) return;
+    this._eclBannerState = msg;
+    let el = document.getElementById('eclipse-banner');
+    if (!msg) { if (el) el.remove(); return; }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'eclipse-banner'; el.className = 'eclipse-banner';
+      document.getElementById('view-sky').appendChild(el);
+    }
+    el.textContent = msg;
   },
 
   async loadCatalog() {
@@ -4891,6 +5587,7 @@ const Sky = {
     this.moonLight.position.copy(this.bodySprites.sun.position);  // phase light follows the real Sun
 
     this.updateISS();
+    const ecl = this._eclipseState(d);
 
     // Atmosphere tint + star fading by sun altitude
     const alt = this.atmosphere ? sunAltitude(jd, Loc.lat, Loc.lon) : -90;
@@ -4909,17 +5606,24 @@ const Sky = {
       bg = new THREE.Color(0x3a5a96).lerp(new THREE.Color(0x6d9bd4), t);
       starFade = 0.12;
     }
+    if (ecl.cov > 0.02) {                                     // sky darkens only as the eclipse nears totality; stars emerge
+      const k = Math.pow(Math.max(0, (ecl.cov - 0.75) / 0.25), 1.6);
+      bg = bg.clone().multiplyScalar(1 - 0.9 * k);
+      starFade = Math.max(starFade, 0.12 + 0.88 * k);
+    }
     this.scene.background = bg;
     for (const mat of this.starMats) mat.opacity = mat.userData.baseOpacity * starFade;
     // The Milky Way is the first casualty of twilight — fade it out fast (cubic)
     for (const m of this._mwMats) m.opacity = m.userData.baseOpacity * starFade ** 3;
     if (this.lineGroup) this.lineGroup.children[0].material.opacity = 0.55 * starFade;
+    if (this._dsoMats) for (const k in this._dsoMats) this._dsoMats[k].opacity = this._dsoMats[k].userData.baseOpacity * starFade;
     if (Math.abs(starFade - this._labelFade) > 0.02) {       // fade name labels with daylight
       this._labelFade = starFade;
-      for (const grp of [this.starNameGroup, this.constLabelGroup]) {
+      for (const grp of [this.starNameGroup, this.constLabelGroup, this.dsoLabelGroup]) {
         if (grp) for (const l of grp.children) l.element.style.opacity = starFade;
       }
     }
+    this._applyEclipseVisuals(ecl);
 
     // Track the followed body — ease the view onto it as the sky turns
     if (this.followBody) {
@@ -4971,6 +5675,10 @@ const Sky = {
         -Math.cos(this.viewAz) * ca * 100
       );
     }
+    const nowT = performance.now();
+    if (nowT - this._showerT > 3000) { this._showerT = nowT; this._updateRadiants(); }
+    this._animateMeteors(nowT, starFade);
+
     this.renderer.render(this.scene, this.camera);
     this.labelRenderer.render(this.scene, this.camera);
   },
@@ -5152,44 +5860,77 @@ function showTonight() {
       rows += `<div class="row${best ? ' clickable' : ''}" data-body="${key}">
         <span class="k">${best ? '●' : '○'} ${label}</span><span class="v">${status}</span></div>`;
     }
-
-    // Meteor showers active now (or peaking within 14 days)
-    let met = '';
-    for (const sh of METEOR_SHOWERS) {
-      const st = showerStatus(sh, Sim.date);
-      if (!st.active && !(st.diff >= 0 && st.diff <= 14)) continue;
-      let rFirst = null, rLast = null, rBest = null;                    // radiant well above the murk (>20°)
+    // Active meteor showers for this night
+    let mRows = '';
+    for (const s of METEOR_SHOWERS.filter(sh => showerActiveOn(sh, Sim.date))) {
+      let best = null;
       for (let t = darkStart; t <= darkEnd; t += STEP) {
-        const p = radiantAltAz(sh.ra, sh.dec, jdOf(t), lat, lon);
-        if (p.alt > 20) { if (rFirst == null) rFirst = t; rLast = t; if (!rBest || p.alt > rBest.alt) rBest = { ...p, t }; }
+        const p = radiantAltAz(s[1], s[2], jdOf(t), lat, lon);
+        if (!best || p.alt > best.alt) best = p;
       }
-      const peakTxt = st.diff === 0 ? 'peaks tonight!' : st.diff > 0 ? `peak in ${st.diff}d` : `${-st.diff}d past peak`;
-      let vis;
-      if (rBest) {                                                     // observed rate ≈ ZHR·sin(alt), dimmed by moonlight
-        const rate = Math.max(1, Math.round(sh.zhr * Math.sin(rBest.alt * DEG) * (1 - 0.6 * lit / 100)));
-        vis = `radiant up ${fmtT(rFirst)}–${fmtT(rLast)} · ~${rate}/hr · ${HEADING_NAMES[Math.round(rBest.az / 45) % 8]}`;
-      } else {
-        vis = 'radiant below horizon tonight';
-      }
-      met += `<div class="row${rBest ? ' clickable' : ''}" data-radaz="${rBest ? rBest.az.toFixed(1) : ''}" data-radalt="${rBest ? Math.min(70, Math.round(rBest.alt)) : ''}">
-        <span class="k">${rBest ? '☄' : '○'} ${sh.name} · ${peakTxt}</span><span class="v">${vis}</span></div>`;
+      const dtp = Math.round(daysToPeak(s, Sim.date));
+      const when = dtp === 0 ? 'peaks tonight' : dtp > 0 ? `peak in ${dtp}d` : `${-dtp}d past peak`;
+      const vis = best && best.alt > 0
+        ? `${Math.round(best.alt / DEG)}° ${HEADING_NAMES[Math.round(best.az / DEG / 45) % 8]}`
+        : 'radiant low';
+      mRows += `<div class="row clickable" data-radiant="${s[0]}">
+        <span class="k">☄ ${s[0]}</span><span class="v">${when} · ZHR ${s[9]} · ${vis}</span></div>`;
     }
-    if (met) rows += `<div class="kind" style="margin:12px 0 2px">Meteor showers</div>${met}`;
+    if (mRows) rows += `<div class="kind" style="margin-top:12px;padding-top:2px">Meteor showers · Moon ${lit}% lit</div>` + mRows;
   }
   const dt = Sim.date;
   card.innerHTML = `<button class="close">×</button><h3>Tonight’s Sky</h3>
     <div class="kind">${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} · ${sub}</div>
-    ${rows}<div class="fact">Naked-eye objects, as seen from ${Loc.name}. Tap a visible one to track it. ☄ meteors radiate from the marked point — lie back and watch the whole sky.</div>`;
+    ${rows}<div class="fact">Naked-eye objects, as seen from ${Loc.name}. Tap a visible one to track it.</div>`;
   card.querySelector('.close').onclick = () => card.classList.remove('open');
-  card.querySelectorAll('.row.clickable[data-body]').forEach(r => r.onclick = () => {
-    Sky._focusSel.value = r.dataset.body;
-    Sky._focusSel.dispatchEvent(new Event('change'));
+  card.querySelectorAll('.row.clickable').forEach(r => r.onclick = () => {
+    if (r.dataset.radiant) {
+      Sky.pointAtRadiant(r.dataset.radiant);
+    } else if (r.dataset.body) {
+      Sky._focusSel.value = r.dataset.body;
+      Sky._focusSel.dispatchEvent(new Event('change'));
+    }
     card.classList.remove('open');
   });
-  card.querySelectorAll('.row.clickable[data-radaz]').forEach(r => r.onclick = () => {   // face the radiant
-    Sky._clearFollow(); Sky._focusSel.value = '';
-    Sky._resetTarget = { az: +r.dataset.radaz * DEG, alt: +r.dataset.radalt * DEG, fov: Sky.camera.fov };
+  card.classList.add('open');
+}
+
+/* ---- Eclipse finder: list upcoming eclipses, tap to time-travel there ---- */
+function showEclipseFinder(cardId) {
+  const card = document.getElementById(cardId);
+  if (card.classList.contains('open')) { card.classList.remove('open'); return; }
+  const now = Sim.ms, MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let list = ECLIPSES.map(e => ({ e, ms: eclipseMs(e) })).filter(x => x.ms > now - 6 * 3600000).slice(0, 10);
+  if (!list.length) list = ECLIPSES.slice(-8).map(e => ({ e, ms: eclipseMs(e) }));
+  const icon = e => e.kind === 'solar'
+    ? (e.type === 'Total' ? '🌑' : e.type === 'Annular' ? '💍' : e.type === 'Hybrid' ? '🌗' : '🌘')
+    : (e.type === 'Total' ? '🔴' : e.type === 'Partial' ? '🌗' : '🌘');
+  let rows = '';
+  for (const { e, ms } of list) {
+    const dt = new Date(ms), days = Math.round((ms - now) / 86400000);
+    const when = days < 0 ? `${-days}d ago` : days === 0 ? 'today' : days < 400 ? `in ${days}d` : `in ${(days / 365).toFixed(1)}y`;
+    rows += `<div class="row clickable" data-ecl="${ms}" data-kind="${e.kind}">
+      <span class="k">${icon(e)} ${e.type} ${e.kind}</span>
+      <span class="v">${dt.getFullYear()} ${MON[dt.getMonth()]} ${dt.getDate()} · ${when}</span></div>`;
+  }
+  card.innerHTML = `<button class="close">×</button><h3>Eclipses</h3>
+    <div class="kind">Upcoming solar &amp; lunar · greatest eclipse, your local time</div>
+    ${rows}
+    <div class="fact">Tap one to jump there. Lunar eclipses show from anywhere on the night side; a solar eclipse is total only on its path — set your location onto it to see totality.</div>`;
+  card.querySelector('.close').onclick = () => card.classList.remove('open');
+  card.querySelectorAll('.row.clickable').forEach(r => r.onclick = () => {
+    const ms = +r.dataset.ecl, kind = r.dataset.kind;
+    Sim.ms = ms; Sim.paused = true; refreshSpeedUI();
+    document.getElementById('t-play').textContent = '▶';
+    const dt = new Date(ms), pad = n => String(n).padStart(2, '0');
+    document.getElementById('t-date').value = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
     card.classList.remove('open');
+    if (activeView === 'sky' && Sky._focusSel) {
+      Sky._focusSel.value = kind === 'solar' ? 'sun' : 'moon';
+      Sky._focusSel.dispatchEvent(new Event('change'));
+    } else if (activeView === 'orrery') {
+      Orrery.setFocus('earth');
+    }
   });
   card.classList.add('open');
 }
