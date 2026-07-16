@@ -1046,6 +1046,7 @@
   </div>
   <nav class="tabs" id="tabs">
     <button data-view="orrery" class="active">Solar System</button>
+    <button data-view="galaxy">Galaxy</button>
     <button data-view="sky">Sky View</button>
     <button data-view="missions">Missions</button>
     <button data-view="feeds">Telescope Feeds</button>
@@ -1078,6 +1079,13 @@
     <div class="toggle-stack" id="orrery-toggles"></div>
     <canvas id="true-scale-banner" width="1312" height="300"></canvas>
     <div id="scale-lens"><canvas width="600" height="600"></canvas></div>
+  </section>
+
+  <!-- ============ GALAXY VIEW ============ -->
+  <section class="view" id="view-galaxy">
+    <div class="canvas-host" id="galaxy-canvas"></div>
+    <div class="labels-host" id="galaxy-labels"></div>
+    <div class="hint">Drag to orbit the galaxy · Scroll to zoom · Our Sun sits ~26,000 light-years from the core</div>
   </section>
 
   <!-- ============ SKY VIEW ============ -->
@@ -1221,6 +1229,7 @@
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellite categories</strong> — separate toggles for <strong>Navigation</strong> (GPS/GNSS, MEO), the <strong>Geostationary</strong> ring, <strong>Comms</strong> LEO constellations, <strong>Weather &amp; science</strong>, and tracked <strong>Debris</strong>. Altitudes are scaled so LEO, MEO and GEO sit at distinct shells — Earth orbit as a cross-section.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
           <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker — planets or the Sun — to magnify it against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
+          <div class="help-row"><span class="icon">🔊</span><span><strong>Sound</strong> — turn on a gentle "music of the spheres": each planet is a soft tone on a shared chord (slower orbits sit lower), panning with its position and swelling as it rounds the Sun, so the harmony drifts as the system turns. Off by default.</span></div>
           <div class="help-row"><span class="icon">☄️</span><span><strong>Comets</strong> — four more periodic comets on their real orbits: <strong>Encke</strong> (3.3-yr), <strong>67P</strong> (ESA's Rosetta target), and the meteor-shower parents <strong>Swift–Tuttle</strong> (Perseids) and <strong>Tempel–Tuttle</strong> (Leonids). Each grows an ion tail pointing away from the Sun as it nears perihelion; click any for its story.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
@@ -1228,6 +1237,14 @@
           <div class="help-row"><span class="icon">🪨</span><span><strong>Asteroid belt</strong> — the rocky rubble between Mars and Jupiter (~2.1–3.3 AU), with the <strong>Kirkwood gaps</strong> cleared by Jupiter's resonances visible as dark lanes in the ring. <strong>Ceres</strong> (dwarf planet) and <strong>Vesta</strong> ride their real orbits as clickable bodies with info cards.</span></div>
           <div class="help-row"><span class="icon">☀️</span><span>The <strong>☰ Controls</strong> panel (right side) has toggles for orbit paths, labels, the ISS, satellites, moons &amp; rings (calms the blur at high time speeds), magnetic fields, the gravity grid, the Milky Way backdrop, and sliders for sun &amp; Milky Way brightness.</span></div>
           <div class="help-row"><span class="icon">⏸</span><span>Time bar: <kbd>⏮</kbd> slower/reverse · <kbd>⏸</kbd> pause · <kbd>⏭</kbd> faster · type a date and hit <kbd>Go</kbd> to jump there.</span></div>
+        </div>
+      </div>
+
+      <div class="help-section">
+        <h3>🌌 Galaxy</h3>
+        <div class="help-rows">
+          <div class="help-row"><span class="icon">🌌</span><span><strong>Zoom out to the whole Milky Way</strong> — a procedural top-down model of our barred spiral: four log-spiral arms (Perseus, Sagittarius–Carina, Scutum–Centaurus, Norma–Outer) after the Reid et al. 2019 geometry, a bar-shaped bulge, and pink star-forming knots. Drag to orbit, scroll to zoom; the disk turns slowly.</span></div>
+          <div class="help-row"><span class="icon">☉</span><span>The <strong>Sun is marked</strong> on the Orion Spur, ~26,000 light-years (8.15 kpc) from the Galactic Centre — a reminder of where everything else in the app sits within the galaxy.</span></div>
         </div>
       </div>
 
@@ -1275,7 +1292,7 @@
           <div class="help-row"><span class="icon">🌍</span><span><strong>Planets</strong>: Schlyter Keplerian elements (arcminute-level). <strong>Moon</strong>: full perturbation series, ~0.02° vs JPL Horizons. <strong>12 moons</strong>: JPL Horizons osculating elements. <strong>ISS</strong>: daily TLE + SGP4 propagation.</span></div>
           <div class="help-row"><span class="icon">📡</span><span>TLE fetched from <em>wheretheiss.at</em> on load with Celestrak as fallback. Refresh the page to pull the latest TLE for best ISS accuracy.</span></div>
         </div>
-        <p class="help-hint">Star catalog: d3-celestial (BSD) · Textures: three.js / threex.planets · Ephemerides: NASA JPL Horizons · Milky Way panorama: ESO/S. Brunier (CC BY 4.0)</p>
+        <p class="help-hint">Star catalog: d3-celestial (BSD) · Textures: three.js / threex.planets · Ephemerides: NASA JPL Horizons · Milky Way panorama: ESO/S. Brunier (CC BY 4.0) · Eclipse dates: NASA GSFC · Space weather: NOAA SWPC · Near-Earth objects: NASA NeoWs · Galaxy arms: Reid et al. 2019</p>
       </div>
 
     </div>
@@ -2323,6 +2340,57 @@ const TEX = (() => {
   };
 })();
 
+// ── Sonification: a gentle "music of the spheres". Each planet is a soft sine
+// voice on a pentatonic chord (slower orbit = lower note); as it orbits, its
+// tone pans with its position and swells with its phase, so the chord drifts. ──
+const Sonify = {
+  ctx: null, master: null, lp: null, voices: {}, on: false, _raf: null,
+  // C2 D2 E2 G2 · A2 C3 D3 E3 — outer planets low, inner planets high
+  NOTES: { neptune: 65.41, uranus: 73.42, saturn: 82.41, jupiter: 98.00, mars: 110.00, earth: 130.81, venus: 146.83, mercury: 164.81 },
+  start() {
+    if (this.on) return; this.on = true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    this.ctx = this.ctx || new AC(); this.ctx.resume();
+    const t = this.ctx.currentTime;
+    this.master = this.ctx.createGain(); this.master.gain.value = 0; this.master.connect(this.ctx.destination);
+    this.lp = this.ctx.createBiquadFilter(); this.lp.type = 'lowpass'; this.lp.frequency.value = 1100; this.lp.Q.value = 0.5; this.lp.connect(this.master);
+    for (const name in this.NOTES) {
+      const f = this.NOTES[name];
+      const osc = this.ctx.createOscillator(); osc.type = 'sine'; osc.frequency.value = f;
+      const osc2 = this.ctx.createOscillator(); osc2.type = 'triangle'; osc2.frequency.value = f * 2; osc2.detune.value = 5;
+      const g = this.ctx.createGain(); g.gain.value = 0;
+      const pan = this.ctx.createStereoPanner();
+      osc.connect(g); osc2.connect(g); g.connect(pan); pan.connect(this.lp);
+      osc.start(); osc2.start();
+      this.voices[name] = { osc, osc2, g, pan };
+    }
+    this.master.gain.linearRampToValueAtTime(0.5, t + 1.5);
+    this._loop();
+  },
+  _loop() {
+    if (!this.on || !this.ctx) return;
+    const t = this.ctx.currentTime;
+    for (const name in this.voices) {
+      const v = this.voices[name], mesh = (typeof Orrery !== 'undefined') && Orrery.meshes[name];
+      if (!mesh) continue;
+      const p = mesh.position, ang = Math.atan2(p.z, p.x);
+      v.pan.pan.setTargetAtTime(Math.max(-1, Math.min(1, p.x / 55)), t, 0.25);
+      const swell = 0.55 + 0.45 * Math.sin(ang);              // louder on one side of the orbit
+      v.g.gain.setTargetAtTime(0.05 * swell, t, 0.35);
+    }
+    this._raf = requestAnimationFrame(() => this._loop());
+  },
+  stop() {
+    if (!this.on) return; this.on = false;
+    cancelAnimationFrame(this._raf);
+    if (this.master) this.master.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.7);
+    const voices = this.voices; this.voices = {};
+    setTimeout(() => { for (const n in voices) { try { voices[n].osc.stop(); voices[n].osc2.stop(); } catch (e) {} } }, 800);
+  },
+  toggle(v) { v ? this.start() : this.stop(); },
+};
+
 // ── Procedural sound effects (Web Audio, no assets) — used by the light ping ──
 const SFX = (() => {
   let ctx = null, master = null, delay = null;
@@ -2682,6 +2750,7 @@ const Orrery = {
           }
         } },
       { label: 'True scale', get: () => !!this.trueTarget, set: v => { this.trueTarget = v ? 1 : 0; } },
+      { label: 'Sound', get: () => Sonify.on, set: v => Sonify.toggle(v) },
     ]);
     const pingBtn = document.createElement('button');
     pingBtn.className = 'toggle-pill';
@@ -4345,6 +4414,26 @@ const Orrery = {
     for (const s of Object.values(SCOPES)) if (s.labelObj) s.labelObj.visible = this.showScopes && this._satLabelsOn;
   },
 
+  coldOpen() {
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    this.controls.enabled = false;
+    this._cold = {
+      t: 0, dur: 5.4, last: performance.now(),
+      from: new THREE.Vector3(0, 7, 12), to: new THREE.Vector3(0, 34, 52),
+    };
+    this.camera.position.copy(this._cold.from);
+    this.controls.target.set(0, 0, 0);
+    this._coldCancel = () => this._cancelColdOpen();
+    for (const ev of ['pointerdown', 'wheel', 'keydown', 'touchstart'])
+      window.addEventListener(ev, this._coldCancel, { passive: true });
+  },
+  _cancelColdOpen() {
+    if (!this._cold) return;
+    this._cold = null; this.controls.enabled = true;
+    for (const ev of ['pointerdown', 'wheel', 'keydown', 'touchstart'])
+      window.removeEventListener(ev, this._coldCancel);
+  },
+
   // World-space position of the current focus target (moons are nested in groups)
   _focusPos(out) {
     if (!this.focusBody) return out.copy(ORIGIN);
@@ -4482,6 +4571,21 @@ const Orrery = {
       moonMesh.position.set(Math.cos(ang) * 1.15, m.z / m.r * 0.3, -Math.sin(ang) * 1.15);
     }
     this.updateEclipse(d, moonMesh);
+    // Cinematic cold-open: a one-time ease from close-on-the-Sun out to the
+    // whole system when the app first opens (any interaction cancels it).
+    if (this._cold) {
+      const now = performance.now();
+      this._cold.t += Math.min(0.1, (now - this._cold.last) / 1000); this._cold.last = now;
+      const u = Math.min(1, this._cold.t / this._cold.dur);
+      const e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;   // easeInOutQuad
+      this.camera.position.lerpVectors(this._cold.from, this._cold.to, e);
+      this.controls.target.set(0, 0, 0);
+      this.camera.lookAt(0, 0, 0);
+      if (u >= 1) this._cancelColdOpen();
+      this.renderer.render(this.scene, this.camera);
+      this.labelRenderer.render(this.scene, this.camera);
+      return;
+    }
     // Glide toward the focused body and travel with it as it orbits
     // (suspended while the Cinematic Tour drives the camera directly)
     if (!this.tourActive) {
@@ -6208,6 +6312,126 @@ async function loadApod(card) {
 }
 
 /* =====================================================================
+   GALAXY VIEW — a procedural top-down Milky Way you can fly around.
+   Four log-spiral arms (pitch ~12°, after Reid et al. 2019), a barred bulge,
+   the Sun marked ~8.15 kpc out on the Orion Spur. 1 scene unit = 1 kpc.
+   ===================================================================== */
+const Galaxy = {
+  scene: null, camera: null, renderer: null, labelRenderer: null, controls: null,
+  disk: null, _init: false, ARMS: [
+    // [name, start-azimuth rad, colour]
+    ['Perseus Arm', 0.0, 0x9fc0ff],
+    ['Norma–Outer Arm', Math.PI / 2, 0xbfa8ff],
+    ['Scutum–Centaurus Arm', Math.PI, 0x9fd8ff],
+    ['Sagittarius–Carina Arm', 3 * Math.PI / 2, 0xa8e0ff],
+  ],
+  init() {
+    if (this._init) return;
+    const host = document.getElementById('galaxy-canvas');
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x02030a);
+    this.camera = new THREE.PerspectiveCamera(50, host.clientWidth / host.clientHeight, 0.1, 2000);
+    this.camera.position.set(0, 26, 34);
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    this.renderer.setSize(host.clientWidth, host.clientHeight);
+    host.appendChild(this.renderer.domElement);
+    this.labelRenderer = new CSS2DRenderer({ element: document.getElementById('galaxy-labels') });
+    this.labelRenderer.setSize(host.clientWidth, host.clientHeight);
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.controls.enableDamping = true; this.controls.dampingFactor = 0.06;
+    this.controls.minDistance = 6; this.controls.maxDistance = 120;
+
+    this.disk = new THREE.Group();
+    this.scene.add(this.disk);
+    this._buildGalaxy();
+
+    // Core glow
+    const glow = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: glowTexture('rgba(255,240,210,0.95)', 'rgba(255,180,90,0)'),
+      color: 0xffe6b0, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    glow.scale.setScalar(10); this.disk.add(glow);
+
+    // The Sun — ~8.15 kpc out, on the Orion Spur (between Sagittarius & Perseus)
+    const sunAng = 2.05, sunR = 8.15;
+    const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: starSprite, color: 0x8afcff, transparent: true, depthWrite: false }));
+    sun.scale.setScalar(1.4);
+    sun.position.set(sunR * Math.cos(sunAng), 0.15, sunR * Math.sin(sunAng));
+    sun.add(makeLabel('☉ Sun — you are here', 'planet'));
+    this.disk.add(sun);
+
+    // Arm labels near each arm's mid-radius
+    for (const [name, a0, col] of this.ARMS) {
+      const r = 11, th = Math.log(r / 3) / Math.tan(12 * DEG) + a0;
+      const l = makeLabel(name, 'const-name');
+      l.position.set(r * Math.cos(th), 0.4, r * Math.sin(th));
+      l.element.style.color = '#' + new THREE.Color(col).getHexString();
+      l.element.style.opacity = 0.85;
+      this.disk.add(l);
+    }
+    // Galactic-centre label
+    const gc = makeLabel('Galactic Centre', 'const-name');
+    gc.position.set(0, 1.2, 0); this.disk.add(gc);
+
+    this._init = true;
+  },
+  _buildGalaxy() {
+    const N = 46000, pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+    const b = Math.tan(12 * DEG);                              // log-spiral winding
+    const arm = new THREE.Color(0x9fc0ff), warm = new THREE.Color(0xfff2d0), core = new THREE.Color(0xffcf8a), hii = new THREE.Color(0xff7a6a);
+    const tmp = new THREE.Color();
+    for (let i = 0; i < N; i++) {
+      let r, x, z, c;
+      const roll = Math.random();
+      if (roll < 0.24) {                                      // barred bulge
+        r = Math.pow(Math.random(), 1.6) * 3.4;
+        const a = Math.random() * Math.PI * 2, bar = 0.55;     // elongate along one axis → bar
+        x = r * Math.cos(a); z = r * Math.sin(a) * (0.55 + bar * (1 - Math.min(1, r / 3.4)));
+        const rot = 0.5; const xr = x * Math.cos(rot) - z * Math.sin(rot), zr = x * Math.sin(rot) + z * Math.cos(rot); x = xr; z = zr;
+        tmp.copy(core).lerp(warm, Math.random() * 0.6);
+      } else {                                                // spiral arms
+        const a0 = this.ARMS[Math.floor(Math.random() * 4)][1];
+        r = 3 + Math.pow(Math.random(), 0.6) * 12.5;
+        let th = Math.log(r / 3) / b + a0;
+        th += (Math.random() - 0.5) * (0.55 + 0.5 * Math.random());  // angular scatter across the arm
+        r += (Math.random() - 0.5) * 0.7;
+        x = r * Math.cos(th); z = r * Math.sin(th);
+        if (Math.random() < 0.022) tmp.copy(hii);             // pink star-forming knots
+        else tmp.copy(arm).lerp(warm, Math.random() * 0.55);
+      }
+      const y = (Math.random() - 0.5) * (roll < 0.24 ? 1.1 * Math.exp(-r / 2.5) : 0.42 * Math.exp(-r / 7));
+      pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = z;
+      const dim = 0.55 + 0.45 * Math.random();
+      col[i * 3] = tmp.r * dim; col[i * 3 + 1] = tmp.g * dim; col[i * 3 + 2] = tmp.b * dim;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    this.disk.add(new THREE.Points(geo, new THREE.PointsMaterial({
+      size: 0.09, map: starSprite, vertexColors: true, transparent: true, opacity: 0.9,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    })));
+  },
+  update() {
+    if (!this._init) return;
+    this.disk.rotation.y -= 0.0004;                           // slow galactic rotation
+    this.controls.update();
+    this.renderer.render(this.scene, this.camera);
+    this.labelRenderer.render(this.scene, this.camera);
+  },
+  resize() {
+    if (!this._init) return;
+    const host = document.getElementById('galaxy-canvas');
+    if (!host.clientWidth) return;
+    this.camera.aspect = host.clientWidth / host.clientHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(host.clientWidth, host.clientHeight);
+    this.labelRenderer.setSize(host.clientWidth, host.clientHeight);
+  },
+};
+
+/* =====================================================================
    UI WIRING + MAIN LOOP
    ===================================================================== */
 let activeView = 'orrery';
@@ -6220,6 +6444,7 @@ document.getElementById('tabs').addEventListener('click', e => {
   updateTimeBarUI();
   if (activeView === 'orrery') Orrery.resize();
   if (activeView === 'sky') { Sky.resize(); Sky._maybeAutoGyro(); }
+  if (activeView === 'galaxy') { Galaxy.init(); Galaxy.resize(); }
 });
 
 /* ---- Tonight's sky: naked-eye visibility for the coming night ---- */
@@ -6361,7 +6586,7 @@ const timeBarEl = document.getElementById('time-bar');
 const tRestoreEl = document.getElementById('t-restore');
 let timeBarFolded = matchMedia('(max-width: 760px)').matches;  // start clean on phones
 function updateTimeBarUI() {
-  const onCanvasView = activeView !== 'feeds';
+  const onCanvasView = activeView !== 'feeds' && activeView !== 'galaxy';
   timeBarEl.style.display = onCanvasView ? 'flex' : 'none';
   timeBarEl.classList.toggle('collapsed', timeBarFolded);
   tRestoreEl.classList.toggle('show', onCanvasView && timeBarFolded);
@@ -7105,7 +7330,7 @@ refreshSpeedUI();
   document.getElementById('t-date').value =
     `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
-window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
+window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); Galaxy.resize(); });
 
 /* ---- Shareable permalink: copy a link to (or restore) the exact view ---- */
 function buildShareURL() {
@@ -7920,6 +8145,7 @@ function loop(now) {
   if (Orrery._preview) Orrery.renderer.render(Orrery._pvScene, Orrery._pvCam);
   else if (activeView === 'orrery') Orrery.update();
   else if (activeView === 'sky') Sky.update();
+  else if (activeView === 'galaxy') Galaxy.update();
   updateClocks(now || performance.now());
   requestAnimationFrame(loop);
 }
@@ -7934,6 +8160,10 @@ if (_tourParam) {
   setTimeout(openLocModal, 1100);
 } else {
   setTimeout(() => showTonightHeadsUp(), 4000);              // heads-up; fallback if ISS feed is slow/down
+}
+// Cinematic cold-open on a normal orrery load (skipped for the tour or a shared view that sets its own camera).
+if (!_tourParam && !ShareLink.p.has('v') && !ShareLink.p.has('f')) {
+  setTimeout(() => { if (activeView === 'orrery' && !Orrery.tourActive) Orrery.coldOpen(); }, 500);
 }
 </script>
 <script>
