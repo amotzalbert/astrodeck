@@ -7402,7 +7402,7 @@ function exportPostcard() {
     }
   }
   const v = P.get('v');
-  if (v && ['orrery', 'sky', 'missions', 'feeds'].includes(v)) document.querySelector(`#tabs button[data-view="${v}"]`).click();
+  if (v && ['orrery', 'galaxy', 'sky', 'missions', 'feeds'].includes(v)) document.querySelector(`#tabs button[data-view="${v}"]`).click();
   const f = P.get('f');
   if (f) setTimeout(() => {
     if (activeView === 'orrery' && (Orrery.meshes[f] || Orrery.moonMeshes[f] || f === 'iss')) Orrery.setFocus(f);
@@ -7884,7 +7884,7 @@ const Tour = (() => {
     get running() { return running; }, get rendering() { return renderMode; } };
 })();
 
-window.__astro = { Orrery, Sky, Sim, Tour, predictISSPasses, Missions, get Loc() { return Loc; } };   // console/debug access
+window.__astro = { Orrery, Sky, Galaxy, Sim, Tour, predictISSPasses, Missions, get Loc() { return Loc; } };   // console/debug access
 
 /* ===== Local "Ask" assistant — answers from app data + drives the app (no LLM) ===== */
 const AMA = (() => {
