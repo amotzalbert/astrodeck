@@ -514,6 +514,27 @@
     box-shadow: 0 0 12px rgba(94,234,212,0.4); transition: all .15s;
   }
   #ask-btn:hover { filter: brightness(1.08); box-shadow: 0 0 18px rgba(94,234,212,0.65); }
+  #share-btn {
+    appearance: none; cursor: pointer; flex: 0 0 auto;
+    width: 30px; height: 30px; display: grid; place-items: center;
+    background: rgba(255,255,255,0.05); border: 1px solid var(--border-soft);
+    border-radius: 50%; color: var(--text); font-size: 15px; line-height: 1; transition: all .15s;
+  }
+  #share-btn:hover { border-color: rgba(94,234,212,0.5); color: var(--accent); }
+  #share-btn.copied { background: rgba(94,234,212,0.2); border-color: rgba(94,234,212,0.7); color: var(--accent); }
+  @media (max-width: 720px) { #share-btn { width: 28px; height: 28px; font-size: 13px; } }
+  .share-pop {
+    position: fixed; z-index: 80; background: var(--panel); backdrop-filter: blur(16px);
+    border: 1px solid var(--border-soft); border-radius: 12px; padding: 6px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6); display: flex; flex-direction: column; gap: 2px;
+    animation: bannerIn .18s ease;
+  }
+  .share-pop button {
+    appearance: none; cursor: pointer; background: transparent; border: 0; border-radius: 8px;
+    color: var(--text); font-size: 13px; text-align: left; padding: 9px 12px; white-space: nowrap;
+    font-family: inherit;
+  }
+  .share-pop button:hover { background: rgba(94,234,212,0.14); color: var(--accent); }
   #ask-panel {
     position: fixed; top: 64px; right: 14px; z-index: 55;
     width: 364px; max-width: calc(100vw - 28px);
@@ -705,6 +726,21 @@
   }
   .feed-card.wide .feed-media { aspect-ratio: 21 / 7; }
   .feed-media iframe, .feed-media img { width: 100%; height: 100%; border: 0; object-fit: cover; }
+  /* live-data panels (space weather, NEO) */
+  .feed-card.wide .feed-media:has(.feed-data),
+  .feed-media:has(.feed-data) { aspect-ratio: auto; min-height: 128px; padding: 16px 18px; place-items: stretch; }
+  .feed-data { width: 100%; color: var(--text); font-family: var(--mono); }
+  .sw-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; height: 100%; }
+  .sw-tile { background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: 12px; padding: 12px 10px; display: flex; flex-direction: column; justify-content: center; gap: 4px; }
+  .sw-val { font-size: 24px; font-weight: 600; line-height: 1.05; }
+  .sw-lbl { font-size: 10px; letter-spacing: 0.8px; text-transform: uppercase; color: #9fb0c8; }
+  .sw-fail { color: #9fb0c8; font-size: 13px; padding: 8px 2px; }
+  .neo-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .neo-table th { text-align: left; color: #9fb0c8; font-weight: 500; padding: 5px 8px; border-bottom: 1px solid var(--border-soft); font-size: 10px; letter-spacing: 0.6px; text-transform: uppercase; }
+  .neo-table td { padding: 6px 8px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+  .neo-table tr:last-child td { border-bottom: 0; }
+  .neo-table tr.neo-near td { color: #fca5a5; }
+  @media (max-width: 620px) { .sw-grid { grid-template-columns: repeat(2, 1fr); } }
   .feed-media .play-cta {
     position: absolute; inset: 0;
     display: grid; place-items: center;
@@ -937,7 +973,8 @@
   body.tour-active .time-restore, body.tour-active #help-btn, body.tour-active #watch-btn, body.tour-active .hint,
   body.tour-active .compass, body.tour-active .stack-fab, body.tour-active .sheet-backdrop,
   body.tour-active .info-card, body.tour-active .pass-banner,
-  body.tour-active #ask-btn, body.tour-active #ask-panel, body.tour-active .tonight-pop, body.tour-active .console-tab {
+  body.tour-active #ask-btn, body.tour-active #ask-panel, body.tour-active .tonight-pop, body.tour-active .console-tab,
+  body.tour-active #share-btn {
     opacity: 0 !important; pointer-events: none !important;
   }
   /* True-scale HUD + revealed pills stay visible during the rap tour, dropped below
@@ -1016,6 +1053,7 @@
   <div class="spacer"></div>
   <button id="watch-btn" title="Watch the AstroDeck tour video"><span class="tri">▶</span><span class="lbl">Watch the tour</span></button>
   <button id="ask-btn" title="Ask AstroDeck — local assistant">✦</button>
+  <button id="share-btn" title="Copy a link to this exact view">⤴</button>
   <button id="help-btn" title="Help &amp; feature guide">?</button>
   <div class="hud-chip clickable" id="chip-location" title="Set observing location">
     <span class="dot"></span>
@@ -1183,6 +1221,7 @@
           <div class="help-row"><span class="icon">🛰</span><span><strong>Satellite categories</strong> — separate toggles for <strong>Navigation</strong> (GPS/GNSS, MEO), the <strong>Geostationary</strong> ring, <strong>Comms</strong> LEO constellations, <strong>Weather &amp; science</strong>, and tracked <strong>Debris</strong>. Altitudes are scaled so LEO, MEO and GEO sit at distinct shells — Earth orbit as a cross-section.</span></div>
           <div class="help-row"><span class="icon">🔭</span><span><strong>Space telescopes</strong> — Hubble, Chandra, XMM-Newton and JWST as 3D models with their real orbits: Hubble's low circle, the wild multi-day ellipses of the X-ray observatories, and JWST riding Sun–Earth L2 with its halo ring. Optics correctly point away from the Sun.</span></div>
           <div class="help-row"><span class="icon">✦</span><span><strong>Light ping</strong> — fire a pulse from the Sun travelling at real light-speed (in sim time); each planet lights up with its light-time as the wavefront passes. <strong>True scale</strong> — morph to honest sizes &amp; distances and watch everything vanish into the void; a diameter banner appears and you can hover (or tap) any glowing marker — planets or the Sun — to magnify it against Earth. <strong>Halley's Comet</strong> rides its real retrograde orbit — time-machine to July 2061 for the tail.</span></div>
+          <div class="help-row"><span class="icon">☄️</span><span><strong>Comets</strong> — four more periodic comets on their real orbits: <strong>Encke</strong> (3.3-yr), <strong>67P</strong> (ESA's Rosetta target), and the meteor-shower parents <strong>Swift–Tuttle</strong> (Perseids) and <strong>Tempel–Tuttle</strong> (Leonids). Each grows an ion tail pointing away from the Sun as it nears perihelion; click any for its story.</span></div>
           <div class="help-row"><span class="icon">🧲</span><span><strong>Mag fields</strong> — dipole field lines with each planet's real tilt (Earth 11°, Uranus a wild 59°). Venus and Mars correctly show none.</span></div>
           <div class="help-row"><span class="icon">🌀</span><span><strong>Gravity grid</strong> — a spacetime sheet under the ecliptic; the Sun digs a deep funnel and every planet dents it, wells riding along as the planets orbit.</span></div>
           <div class="help-row"><span class="icon">🧊</span><span><strong>Kuiper Belt</strong> — the icy debris ring beyond Neptune (~30–50 AU), home of Pluto and the comets. Most bodies cluster in the classical belt at low tilt, with a scattered tail reaching higher inclinations. Drifts slowly prograde at high time speeds and morphs honestly under true scale.</span></div>
@@ -1202,7 +1241,8 @@
           <div class="help-row"><span class="icon">🔭</span><span><strong>Deep sky (Messier)</strong> — all 110 Messier objects plotted at their true positions, drawn as distinct glyphs for galaxies, star clusters and nebulae. Tap any one for a card with its type, magnitude, coordinates and a fact; "Point at it" glides the view there. The famous ones carry name labels (toggle separately).</span></div>
           <div class="help-row"><span class="icon">☄️</span><span><strong>Meteor showers</strong> — when a major shower is active for the current date, its radiant appears as a labelled burst and real meteors streak outward from it (rate scaled to the shower's ZHR). The <strong>Tonight</strong> panel lists every active shower with days-to-peak, ZHR and Moon phase — tap one to fly to its radiant. Time-travel to Aug 12 (Perseids) or Dec 14 (Geminids) for the big ones.</span></div>
           <div class="help-row"><span class="icon">🌘</span><span><strong>Eclipses</strong> — the <strong>Eclipses</strong> pill lists every upcoming solar &amp; lunar eclipse (NASA data); tap one to time-travel there. In Sky View a total lunar eclipse turns the Moon blood-red, and a solar eclipse darkens the daytime sky, brings out the stars and rings the Sun with its corona — set your location onto the path to see totality. In the Solar System view, focus Earth to watch the shadow cones: the Moon reddening inside Earth's umbra, or the Moon's own shadow spearing onto Earth.</span></div>
-          <div class="help-row"><span class="icon">✨</span><span><strong>Tonight</strong> panel — scans the coming dark window and lists every naked-eye planet + Moon: visible hours, peak altitude, compass direction. Tap any row to track it.</span></div>
+          <div class="help-row"><span class="icon">✨</span><span><strong>Tonight</strong> panel — leads with <strong>Sun &amp; Moon rise/set</strong>, the astronomical-dark window and the Moon's phase, then lists every naked-eye planet + Moon (visible hours, peak altitude, compass direction) and any active meteor showers. Tap any row to track it.</span></div>
+          <div class="help-row"><span class="icon">👆</span><span><strong>Tap to identify</strong> — click any bright named star (or deep-sky object) to pull up a card with its magnitude, distance, spectral type, live position and a fact; "Point at it" glides the view there.</span></div>
           <div class="help-row"><span class="icon">🛰️</span><span><strong>ISS pass alert</strong> — a banner appears only on nights with a genuinely visible pass (station &gt;10°, sky dark, station sunlit). "Show me" jumps to the pass and tracks it.</span></div>
           <div class="help-row"><span class="icon">🧭</span><span>Live <strong>compass</strong> (bottom-left) shows your heading. Click it to snap back to North.</span></div>
           <div class="help-row"><span class="icon">↺</span><span><strong>Reset View</strong> returns to your saved default direction and 28° altitude. Useful after manual panning.</span></div>
@@ -1393,6 +1433,41 @@ function sunAltitude(jd, latDeg, lonDeg) {
   return Math.asin(Math.sin(phi) * Math.sin(eq.dec) + Math.cos(phi) * Math.cos(eq.dec) * Math.cos(H)) / DEG;
 }
 
+// Next time (ms) an altitude function crosses `target`° in direction dir (+1 rising,
+// −1 setting), scanning up to `hours` ahead, then bisecting to the minute.
+function nextCrossing(altFn, t0, target, dir, hours = 25) {
+  const STEP = 5 * 60000;
+  let prev = altFn(t0);
+  for (let t = t0 + STEP; t <= t0 + hours * 3600000; t += STEP) {
+    const a = altFn(t);
+    if ((dir > 0 && prev < target && a >= target) || (dir < 0 && prev > target && a <= target)) {
+      let lo = t - STEP, hi = t;
+      for (let i = 0; i < 22; i++) {
+        const mid = (lo + hi) / 2;
+        if ((altFn(lo) < target) === (altFn(mid) < target)) lo = mid; else hi = mid;
+      }
+      return (lo + hi) / 2;
+    }
+    prev = a;
+  }
+  return null;
+}
+// Moon illumination %, phase name + emoji, and waxing/waning for day-number d.
+function moonPhaseInfo(d) {
+  const s = sunGeo(d), m = moonGeo(d);
+  const illum = Math.round((1 - (s.x * m.x + s.y * m.y + s.z * m.z) / (s.r * m.r)) / 2 * 100);
+  let diff = Math.atan2(m.y, m.x) - Math.atan2(s.y, s.x);
+  while (diff < 0) diff += 2 * Math.PI;
+  const waxing = diff < Math.PI;
+  let name, emoji;
+  if (illum < 2) { name = 'New'; emoji = '🌑'; }
+  else if (illum > 98) { name = 'Full'; emoji = '🌕'; }
+  else if (illum >= 45 && illum <= 55) { name = waxing ? 'First quarter' : 'Last quarter'; emoji = waxing ? '🌓' : '🌗'; }
+  else if (illum < 45) { name = waxing ? 'Waxing crescent' : 'Waning crescent'; emoji = waxing ? '🌒' : '🌘'; }
+  else { name = waxing ? 'Waxing gibbous' : 'Waning gibbous'; emoji = waxing ? '🌔' : '🌖'; }
+  return { illum, name, emoji, waxing };
+}
+
 // Alt/az (deg; az from north, eastward) of any body at a given time/place
 function bodyAltAzAt(name, jd, latDeg, lonDeg) {
   const eq = bodyEquatorial(name, dDays(jd));
@@ -1439,6 +1514,16 @@ let Loc = (() => {
     return saved;
   } catch { return DEFAULT_LOC; }
 })();
+// Shared-view permalink (?v=&t=&lat=&lon=&loc=&h=&f=). A shared location overrides
+// the saved one for this visit only (not written to localStorage).
+const ShareLink = { p: new URLSearchParams(location.search), hasLoc: false };
+{
+  const la = parseFloat(ShareLink.p.get('lat')), lo = parseFloat(ShareLink.p.get('lon'));
+  if (!isNaN(la) && !isNaN(lo)) {
+    Loc = { name: ShareLink.p.get('loc') || 'Shared view', lat: la, lon: lo, heading: parseFloat(ShareLink.p.get('h')) || 90 };
+    ShareLink.hasLoc = true;
+  }
+}
 function saveLoc(l) {
   Loc = l;
   localStorage.setItem('astrodeck.location', JSON.stringify(l));
@@ -2065,6 +2150,16 @@ const scaleDist = rAU => {
 // 1P/Halley — osculating elements around the 1986 apparition; retrograde, e≈0.967.
 // dPeri = perihelion 1986 Feb 9 in Schlyter day-numbers (JD − 2451543.5).
 const HALLEY = { N: 58.42, i: 162.26, w: 111.33, a: 17.834, e: 0.96714, n: 0.0130858, dPeri: -5072.5 };
+// More periodic comets — mean Keplerian elements; n (deg/day) = 0.98561 / a^1.5,
+// dPeri = day-number (from J2000) of a known perihelion passage. Several are the
+// parent bodies of the meteor showers in Sky View.
+const COMETS = [
+  { key: 'encke',       name: 'Encke',        N: 334.57, i: 11.78,  w: 186.55, a: 2.2155, e: 0.8483, dPeri: 8696,  color: 0xd7e8f0, fact: 'The shortest-period comet known — it rounds the Sun every 3.3 years — and the source of the Taurid meteors.' },
+  { key: 'churyumov',   name: '67P (Rosetta)',N: 50.19,  i: 7.04,   w: 12.79,  a: 3.4570, e: 0.6410, dPeri: 7977,  color: 0xcfe0d8, fact: 'The rubber-duck-shaped comet where ESA’s Rosetta orbited and the Philae lander touched down in 2014.' },
+  { key: 'swifttuttle', name: 'Swift–Tuttle', N: 139.38, i: 113.45, w: 152.98, a: 26.092, e: 0.9632, dPeri: -2576, color: 0xbfe6ff, fact: 'A 26-km nucleus on a 133-year orbit — its dust gives us the Perseid meteor shower every August.' },
+  { key: 'tempeltuttle',name: 'Tempel–Tuttle',N: 234.56, i: 162.49, w: 172.50, a: 10.337, e: 0.9057, dPeri: -671,  color: 0xd8c8ff, fact: 'The parent of the Leonids; every ~33 years its fresh dust can turn the shower into a meteor storm.' },
+];
+for (const c of COMETS) c.n = 0.9856076686 / Math.pow(c.a, 1.5);
 // 134340 Pluto — mean Keplerian elements (J2000 ecliptic); n in deg/day, dPeri days from J2000.
 const PLUTO = { N: 110.304, i: 17.14, w: 113.763, a: 39.482, e: 0.2488, n: 0.0039753, dPeri: -3738.6 };
 // Map Schlyter ecliptic (x,y,z; z = ecliptic north) → three.js (y-up) with compression
@@ -2309,6 +2404,7 @@ const Orrery = {
   scene: null, camera: null, controls: null, raycaster: new THREE.Raycaster(), clickables: [],
   showOrbits: true, showLabels: true, showISS: true, showMag: false, showGrav: false, showMoons: true, showMW: true, showSats: false, showScopes: false, showStarlink: false, showKuiper: false, showHalley: true, showPluto: false, showMarbles: false,
   showAsteroids: false, asteroidPoints: null, _asteroidRaw: [], asteroidMeshes: {},
+  showComets: false, cometMeshes: {}, cometTails: {}, cometOrbits: {},
   trueTarget: 0, _helioR: {}, _orbitRaw: {}, starlinkStyle: 'dots',
 
   init() {
@@ -2316,7 +2412,7 @@ const Orrery = {
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(50, host.clientWidth / host.clientHeight, 0.1, 5000);
     this.camera.position.set(0, 34, 52);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.setSize(host.clientWidth, host.clientHeight);
     host.appendChild(this.renderer.domElement);
@@ -2556,6 +2652,10 @@ const Orrery = {
           this.showPluto = v;
           if (!v && this.focusBody === 'pluto') { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
         } },
+      { label: 'Comets', get: () => this.showComets, set: v => {
+          this.showComets = v;
+          if (!v && this.cometMeshes[this.focusBody]) { this.setFocus(null); document.getElementById('orrery-info').classList.remove('open'); }
+        } },
       { label: 'Mag fields', get: () => this.showMag, set: v => {
           this.showMag = v;
           for (const g of this.magFields) g.visible = v;
@@ -2655,6 +2755,7 @@ const Orrery = {
     this.addStarlinkLayer();
     this.addSatGroupLayers();
     this.addHalley();
+    this.addComets();
     this.addPluto();
     this.addScaleMarkers();
 
@@ -3274,6 +3375,77 @@ const Orrery = {
       _tmpV.copy(mesh.position).normalize();                 // tail points anti-Sun, always
       t.quaternion.setFromUnitVectors(_tmpV2.set(0, -1, 0), _tmpV);
     } else t.visible = false;
+  },
+
+  // ---- Extra periodic comets — same Kepler + ion-tail model as Halley ----
+  _cometPosFromE(c, Edeg) {
+    const xv = c.a * (Math.cos(Edeg * DEG) - c.e);
+    const yv = c.a * Math.sqrt(1 - c.e * c.e) * Math.sin(Edeg * DEG);
+    const v = Math.atan2(yv, xv), r = Math.hypot(xv, yv);
+    const vw = v + c.w * DEG, Nr = c.N * DEG, ir = c.i * DEG;
+    return {
+      x: r * (Math.cos(Nr) * Math.cos(vw) - Math.sin(Nr) * Math.sin(vw) * Math.cos(ir)),
+      y: r * (Math.sin(Nr) * Math.cos(vw) + Math.cos(Nr) * Math.sin(vw) * Math.cos(ir)),
+      z: r * Math.sin(vw) * Math.sin(ir),
+    };
+  },
+
+  addComets() {
+    for (const c of COMETS) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.15, 18, 18),
+        new THREE.MeshStandardMaterial({ color: c.color, roughness: 0.6, metalness: 0.05, emissive: 0x1b2634 }));
+      mesh.userData.body = c.key;
+      const label = makeLabel(c.name, 'planet');
+      mesh.add(label); mesh.userData.label = label;
+      const tailGeo = new THREE.ConeGeometry(0.15, 1, 14, 1, true);
+      tailGeo.translate(0, -0.5, 0);
+      const tail = new THREE.Mesh(tailGeo, new THREE.MeshBasicMaterial({
+        color: 0x9fd8ff, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      tail.visible = false; mesh.add(tail);
+      mesh.visible = false; label.visible = false;
+      this.scene.add(mesh);
+      this.meshes[c.key] = mesh; this.cometMeshes[c.key] = mesh; this.cometTails[c.key] = tail;
+      this.clickables.push(mesh);
+      const raw = [];
+      for (let k = 0; k <= 256; k++) raw.push(this._cometPosFromE(c, k / 256 * 360));
+      const orbit = new THREE.Line(new THREE.BufferGeometry().setFromPoints(raw.map(eclToScene)),
+        new THREE.LineBasicMaterial({ color: 0x8ec6e6, transparent: true, opacity: 0.4 }));
+      orbit.userData.isOrbit = true; orbit.userData.cometRaw = raw; orbit.visible = false;
+      this.scene.add(orbit); this.cometOrbits[c.key] = orbit;
+    }
+  },
+
+  updateComets(d) {
+    for (const c of COMETS) {
+      const mesh = this.cometMeshes[c.key]; if (!mesh) continue;
+      mesh.visible = this.showComets;
+      mesh.userData.label.visible = this.showComets && this.showLabels;
+      const orbit = this.cometOrbits[c.key];
+      if (orbit) {
+        orbit.visible = this.showComets && this.showOrbits;
+        if (orbit.visible) {                                  // reproject so orbits morph under true scale
+          const attr = orbit.geometry.attributes.position, raw = orbit.userData.cometRaw;
+          for (let k = 0; k < raw.length; k++) { const v = eclToScene(raw[k]); attr.setXYZ(k, v.x, v.y, v.z); }
+          attr.needsUpdate = true;
+        }
+      }
+      if (!this.showComets) { this.cometTails[c.key].visible = false; continue; }
+      const E = solveKepler(rev(c.n * (d - c.dPeri)), c.e);
+      const p = this._cometPosFromE(c, E);
+      mesh.position.copy(eclToScene(p));
+      const r = Math.hypot(p.x, p.y, p.z);
+      this._helioR[c.key] = r;
+      mesh.scale.setScalar(Math.max(1e-4, 1 - SCALE_MORPH * 0.9995));
+      const t = this.cometTails[c.key];
+      if (r < 4 && SCALE_MORPH < 0.02) {
+        t.visible = true;
+        const L = (4 - r) / 3.4;
+        t.scale.set(0.5 + L * 0.6, Math.max(0.25, L * 2.8), 0.5 + L * 0.6);
+        t.material.opacity = 0.08 + 0.32 * L;
+        _tmpV.copy(mesh.position).normalize();
+        t.quaternion.setFromUnitVectors(_tmpV2.set(0, -1, 0), _tmpV);
+      } else t.visible = false;
+    }
   },
 
   // ---- Pluto (dwarf planet) — Kepler orbit, modelled like Halley ----
@@ -4289,6 +4461,7 @@ const Orrery = {
     this.updateSatGroups(d);
     this.updateScopes(d);
     this.updateHalley(d);
+    this.updateComets(d);
     this.updatePluto(d);
     this.updatePing();
     this._updateScaleExtras();
@@ -4447,6 +4620,14 @@ function showBodyInfo(body, cardId, onClose) {
     rows = row('Distance from Earth', Math.round(m.r * AU_KM).toLocaleString() + ' km')
          + row('Diameter', '3,474 km') + row('Orbital period', '27.3 days');
     fact = 'The Moon drifts about 3.8 cm farther from Earth every year.';
+  } else if (COMETS.some(c => c.key === body)) {
+    const c = COMETS.find(x => x.key === body);
+    title = c.name; kind = 'Periodic comet';
+    const r = Orrery._helioR[body];
+    rows = (r ? row('Distance from Sun', r.toFixed(2) + ' AU') : '')
+         + row('Orbit', c.a.toFixed(1) + ' AU · e ' + c.e.toFixed(2))
+         + row('Period', (Math.pow(c.a, 1.5)).toFixed(1) + ' years');
+    fact = c.fact;
   } else if (body === 'ceres') {
     title = 'Ceres'; kind = 'Dwarf planet · asteroid belt';
     const r = Math.hypot(...(p => [p.x, p.y, p.z])(orbitalToEcliptic(Orrery._asteroidM('ceres', d))));
@@ -4529,6 +4710,33 @@ const NAMED_STARS = [
   ['Polaris',37.95,89.26],['Mizar',200.98,54.93],['Dubhe',165.93,61.75],
   ['Alioth',193.51,55.96],['Mirfak',51.08,49.86],['Bellatrix',81.28,6.35],
 ];
+// Curated info for the named stars: [magnitude, distance ly, spectral type, fact]
+const STAR_INFO = {
+  Sirius:     [-1.46, 8.6,  'A1V blue-white', 'The brightest star in the night sky, with a faint white-dwarf companion, Sirius B.'],
+  Canopus:    [-0.74, 310,  'A9 supergiant',  'The second-brightest star — a distant yellow-white supergiant long used for spacecraft navigation.'],
+  Arcturus:   [-0.05, 37,   'K0 orange giant','An orange giant racing through the galaxy; its light was used to open the 1933 Chicago World’s Fair.'],
+  Vega:       [0.03,  25,   'A0V blue-white', 'Once the pole star and still a standard for measuring brightness; ringed by a dusty debris disk.'],
+  Capella:    [0.08,  43,   'G-type giants',  'Actually two pairs of stars — the brightest in Auriga the charioteer.'],
+  Rigel:      [0.13,  860,  'B8 blue supergiant','A blue supergiant tens of thousands of times more luminous than the Sun, marking Orion’s foot.'],
+  Procyon:    [0.34,  11,   'F5 white',       'One of our nearest neighbours, with a white-dwarf companion, Procyon B.'],
+  Betelgeuse: [0.5,   640,  'M1 red supergiant','A red supergiant so vast it would swallow Jupiter’s orbit; it will one day explode as a supernova.'],
+  Achernar:   [0.46,  140,  'B6 blue',        'Spins so fast it is flattened into an ellipsoid; it ends the celestial river Eridanus.'],
+  Altair:     [0.77,  17,   'A7 white',       'One of the closest naked-eye stars; it rotates so fast its day lasts about 9 hours.'],
+  Aldebaran:  [0.86,  65,   'K5 orange giant','The fiery orange eye of Taurus the bull — an aging giant.'],
+  Antares:    [1.06,  550,  'M1 red supergiant','A red supergiant rival to Mars in colour; the beating heart of Scorpius.'],
+  Spica:      [0.98,  250,  'B1 blue',        'A hot blue binary whose stars nearly touch; the ear of wheat held by Virgo.'],
+  Pollux:     [1.14,  34,   'K0 orange giant','The brighter twin of Gemini — and it hosts a confirmed giant exoplanet.'],
+  Fomalhaut:  [1.16,  25,   'A3 white',       'Encircled by a sharp debris ring famously imaged by Hubble.'],
+  Deneb:      [1.25,  2600, 'A2 supergiant',  'One of the most luminous stars known — the tail of Cygnus the swan.'],
+  Regulus:    [1.35,  79,   'B8 blue-white',  'The heart of Leo; a fast spinner visibly flattened at its poles.'],
+  Castor:     [1.58,  51,   'A-type system',  'A remarkable six-star system — the other twin of Gemini.'],
+  Polaris:    [1.98,  430,  'F7 supergiant',  'The North Star, sitting within 1° of the north celestial pole.'],
+  Mizar:      [2.23,  83,   'A2 white',       'A famous double in the Big Dipper’s handle, paired with the star Alcor.'],
+  Dubhe:      [1.79,  123,  'K0 orange giant','A "pointer" star of the Big Dipper — a line through it aims at Polaris.'],
+  Alioth:     [1.76,  81,   'A1 white',       'The brightest star of the Big Dipper.'],
+  Mirfak:     [1.79,  510,  'F5 supergiant',  'The brightest star in Perseus, set in a rich cluster of stars.'],
+  Bellatrix:  [1.64,  250,  'B2 blue',        'The "Amazon star" — Orion’s left shoulder.'],
+};
 // Minimal fallback catalog [raDeg, decDeg, mag] if the CDN fetch fails
 const FALLBACK_STARS = NAMED_STARS.map(([, ra, dec], i) => [ra, dec, i < 16 ? 1.0 : 1.8])
   .concat([[24.5,-57.2,0.5],[210.96,-60.37,0.6],[186.65,-63.10,0.8],[104.66,-28.97,1.5],
@@ -4898,7 +5106,7 @@ const Sky = {
     this.scene.fog = null;
     this.camera = new THREE.PerspectiveCamera(60, host.clientWidth / host.clientHeight, 0.1, 3000);
     this.camera.position.set(0, 2, 0);
-    this.renderer = new THREE.WebGLRenderer({ antialias: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     this.renderer.setSize(host.clientWidth, host.clientHeight);
     host.appendChild(this.renderer.domElement);
@@ -5210,23 +5418,55 @@ const Sky = {
     return { alt: Math.asin(w.y / r), az: Math.atan2(w.x, -w.z) };
   },
 
-  // Screen-space nearest-hit pick against the DSO glyphs (sprites are tiny, so a
-  // pixel-radius search is far more forgiving than a ray through the quad).
+  // Screen-space nearest-hit pick against the DSO glyphs AND the named bright stars
+  // (both are tiny targets, so a pixel-radius search beats a ray through the quad).
   _pickDSO(e) {
-    if (!this.dsoGroup || !this.showDSO) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     const px = e.clientX - rect.left, py = e.clientY - rect.top;
     const camDir = this.camera.getWorldDirection(new THREE.Vector3());
-    let best = null, bestD = 22;                              // px tolerance
-    for (const s of this.dsoGroup.children) {
-      const w = s.position.clone().applyQuaternion(this.group.quaternion);
-      if (w.clone().normalize().dot(camDir) <= 0.1) continue; // behind / far off-axis
-      w.project(this.camera);
+    let best = null, bestD = 22, kind = null;                 // px tolerance
+    const consider = (worldVec, payload, k, tol) => {
+      if (worldVec.clone().normalize().dot(camDir) <= 0.1) return;   // behind / far off-axis
+      const w = worldVec.project(this.camera);
       const sx = (w.x * 0.5 + 0.5) * rect.width, sy = (-w.y * 0.5 + 0.5) * rect.height;
       const dd = Math.hypot(sx - px, sy - py);
-      if (dd < bestD) { bestD = dd; best = s; }
-    }
-    if (best) this.openDSOCard(best);
+      if (dd < Math.min(bestD, tol)) { bestD = dd; best = payload; kind = k; }
+    };
+    if (this.dsoGroup && this.showDSO) for (const s of this.dsoGroup.children)
+      consider(s.position.clone().applyQuaternion(this.group.quaternion), s, 'dso', 22);
+    for (const [name, ra, dec] of NAMED_STARS)               // bright stars are always identifiable
+      consider(eqToVec(ra * DEG, dec * DEG, SKY_R).applyQuaternion(this.group.quaternion), { name, ra, dec }, 'star', 16);
+    if (kind === 'dso') this.openDSOCard(best);
+    else if (kind === 'star') this.openStarCard(best);
+  },
+
+  openStarCard(star) {
+    const info = STAR_INFO[star.name] || [null, null, '', ''];
+    const card = document.getElementById('sky-info');
+    const aa = this._eqAltAz(eqToVec(star.ra * DEG, star.dec * DEG, SKY_R));
+    const altDeg = aa.alt / DEG, azDeg = ((aa.az / DEG) % 360 + 360) % 360;
+    let raH = star.ra / 15, rh = Math.floor(raH), rm = Math.round((raH - rh) * 60);
+    if (rm === 60) { rm = 0; rh = (rh + 1) % 24; }
+    const dSign = star.dec < 0 ? '−' : '+', da = Math.abs(star.dec);
+    let dd = Math.floor(da), dmn = Math.round((da - dd) * 60);
+    if (dmn === 60) { dmn = 0; dd += 1; }
+    const dir = HEADING_NAMES[Math.round(azDeg / 45) % 8];
+    const horizon = altDeg > 0 ? `${Math.round(altDeg)}° up · ${dir}` : `${Math.round(Math.abs(altDeg))}° below horizon`;
+    card.innerHTML = `<button class="close">×</button><h3>${star.name}</h3>
+      <div class="kind">Star${info[2] ? ' · ' + info[2] : ''}</div>
+      ${info[0] != null ? `<div class="row"><span class="k">Magnitude</span><span class="v">${info[0].toFixed(2)}</span></div>` : ''}
+      ${info[1] != null ? `<div class="row"><span class="k">Distance</span><span class="v">${info[1].toLocaleString()} light-years</span></div>` : ''}
+      <div class="row"><span class="k">RA / Dec</span><span class="v">${rh}h ${pad(rm)}m · ${dSign}${dd}° ${pad(dmn)}′</span></div>
+      <div class="row"><span class="k">Right now</span><span class="v">${horizon}</span></div>
+      ${info[3] ? `<div class="fact">${info[3]}</div>` : ''}
+      <button class="ask-action" id="star-point">Point at it ▸</button>`;
+    card.querySelector('.close').onclick = () => card.classList.remove('open');
+    card.querySelector('#star-point').onclick = () => {
+      this._clearFollow();
+      this._resetTarget = { az: aa.az, alt: Math.max(-0.2, Math.min(Math.PI / 2 - 0.02, aa.alt)), fov: 42 };
+      card.classList.remove('open');
+    };
+    card.classList.add('open');
   },
 
   openDSOCard(sprite) {
@@ -5802,6 +6042,16 @@ const FEEDS = [
     link: 'https://www.youtube.com/watch?v=fO9e9jnhYK8',
   },
   {
+    type: 'panel', tag: 'auto', wide: true, title: 'Space Weather — right now',
+    desc: 'Live conditions from NOAA’s Space Weather Prediction Center: the planetary K-index, solar-wind speed and the resulting aurora outlook.',
+    load: 'spaceweather', link: 'https://www.swpc.noaa.gov/',
+  },
+  {
+    type: 'panel', tag: 'auto', wide: true, title: 'Near-Earth Asteroids — close approaches',
+    desc: 'Asteroids making their closest pass to Earth over the coming week, nearest first, from NASA’s Near-Earth Object program (red = hazardous or within one lunar distance).',
+    load: 'neo', link: 'https://cneos.jpl.nasa.gov/ca/',
+  },
+  {
     type: 'link', tag: 'ext', title: 'NASA+ Live Coverage',
     desc: 'NASA’s streaming home since NASA TV signed off: launches, spacewalks, mission events and documentaries — free, no account needed.',
     link: 'https://plus.nasa.gov/listing/?type=live-and-upcoming',
@@ -5856,6 +6106,7 @@ function buildFeeds() {
     let media = '';
     if (f.type === 'embed') media = `<div class="play-cta"><div class="ring">▶</div></div>`;
     if (f.type === 'img') media = `<img loading="lazy" src="${f.src}" alt="${f.title}">`;
+    if (f.type === 'panel') media = `<div class="feed-data">Loading live data…</div>`;
     card.innerHTML = `
       <div class="feed-media">${media}</div>
       <div class="feed-body">
@@ -5873,7 +6124,69 @@ function buildFeeds() {
       setInterval(() => { img.src = f.src + '?t=' + Date.now(); }, f.refresh * 1000);
     }
     if (f.type === 'apod') loadApod(card);
+    if (f.type === 'panel') {
+      const el = card.querySelector('.feed-data');
+      if (f.load === 'spaceweather') loadSpaceWeather(el);
+      else if (f.load === 'neo') loadNEO(el);
+    }
     grid.appendChild(card);
+  }
+}
+
+// Live space weather from NOAA SWPC. The planetary K-index drives everything;
+// solar-wind speed is a bonus tile that's simply omitted if its feed is down.
+async function loadSpaceWeather(el) {
+  try {
+    const kpJson = await fetch('https://services.swpc.noaa.gov/products/noaa-planetary-k-index.json').then(r => { if (!r.ok) throw 0; return r.json(); });
+    let kp;                                                    // the feed ships either objects or header+rows
+    if (Array.isArray(kpJson[0])) { const idx = Math.max(1, kpJson[0].indexOf('Kp')); kp = parseFloat(kpJson[kpJson.length - 1][idx]); }
+    else kp = parseFloat(kpJson[kpJson.length - 1].Kp);
+    let speed = null;
+    try {
+      const sw = await fetch('https://services.swpc.noaa.gov/products/solar-wind/plasma-2-hour.json').then(r => r.json());
+      for (let i = sw.length - 1; i > 0; i--) { const s = parseFloat(Array.isArray(sw[i]) ? sw[i][2] : sw[i].speed); if (!isNaN(s)) { speed = Math.round(s); break; } }
+    } catch (e) { /* solar-wind optional */ }
+    const storm = kp < 5 ? (kp < 4 ? 'Quiet' : 'Unsettled') : kp < 6 ? 'G1 · Minor storm' : kp < 7 ? 'G2 · Moderate storm' : kp < 8 ? 'G3 · Strong storm' : 'G4+ · Severe storm';
+    const aurora = kp < 4 ? 'High latitudes only' : kp < 5 ? 'Possible in Scandinavia / Canada' : kp < 6 ? 'Down to ~55° latitude' : kp < 7 ? 'Down to ~50° — northern US / UK' : 'Mid-latitudes — a real show';
+    const kpColor = kp < 4 ? '#5eead4' : kp < 5 ? '#fde047' : kp < 7 ? '#fb923c' : '#f87171';
+    el.innerHTML = `<div class="sw-grid">
+      <div class="sw-tile"><div class="sw-val" style="color:${kpColor}">${kp.toFixed(1)}</div><div class="sw-lbl">Kp index</div></div>
+      <div class="sw-tile"><div class="sw-val">${speed != null ? speed : '—'}</div><div class="sw-lbl">Solar wind km/s</div></div>
+      <div class="sw-tile"><div class="sw-val" style="font-size:15px;color:${kpColor}">${storm}</div><div class="sw-lbl">Geomagnetic</div></div>
+      <div class="sw-tile"><div class="sw-val" style="font-size:13px">${aurora}</div><div class="sw-lbl">Aurora tonight</div></div>
+    </div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="sw-fail">Space-weather feed unreachable right now — open NOAA SWPC ↗ for the live dashboard.</div>`;
+  }
+}
+
+// Near-Earth asteroid close approaches from NASA's NeoWs (CORS-open; JPL's own
+// CAD API sends no CORS headers, so NeoWs is the browser-friendly source).
+async function loadNEO(el) {
+  try {
+    const iso = ms => new Date(ms).toISOString().slice(0, 10);
+    const start = iso(Date.now()), end = iso(Date.now() + 6 * 86400000);   // NeoWs feed spans max 7 days
+    const j = await fetch(`https://api.nasa.gov/neo/rest/v1/feed?start_date=${start}&end_date=${end}&api_key=DEMO_KEY`)
+      .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); });
+    const objs = [];
+    for (const day in (j.near_earth_objects || {})) for (const o of j.near_earth_objects[day]) {
+      const ca = o.close_approach_data[0];
+      objs.push({
+        name: o.name.replace(/[()]/g, '').trim(), date: ca.close_approach_date,
+        ld: parseFloat(ca.miss_distance.lunar), v: parseFloat(ca.relative_velocity.kilometers_per_second),
+        dia: o.estimated_diameter.meters.estimated_diameter_max, haz: o.is_potentially_hazardous_asteroid,
+      });
+    }
+    objs.sort((a, b) => a.ld - b.ld);
+    const rows = objs.slice(0, 8).map(o => {
+      const size = o.dia < 1000 ? Math.round(o.dia) + ' m' : (o.dia / 1000).toFixed(1) + ' km';
+      return `<tr${o.ld < 1 || o.haz ? ' class="neo-near"' : ''}><td>${o.name}</td><td>${o.date}</td><td>${o.ld.toFixed(1)} LD</td><td>~${size}</td><td>${o.v.toFixed(1)} km/s</td></tr>`;
+    }).join('');
+    el.innerHTML = rows
+      ? `<table class="neo-table"><thead><tr><th>Object</th><th>Date</th><th>Miss dist</th><th>Size</th><th>Speed</th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<div class="sw-fail">No catalogued close approaches in the next week.</div>`;
+  } catch (err) {
+    el.innerHTML = `<div class="sw-fail">Live NEO feed is busy right now (NASA rate limit) — open CNEOS ↗ for the close-approach table.</div>`;
   }
 }
 
@@ -5925,6 +6238,18 @@ function showTonight() {
     else if (a > -4) { darkEnd = t; break; }
   }
   const fmtT = ms => { const dt = new Date(ms); return `${pad(dt.getHours())}:${pad(dt.getMinutes())}`; };
+  // Sun & Moon rise/set + astronomical twilight + moon phase (shown regardless of dark window)
+  const sunAlt = ms => sunAltitude(jdOf(ms), lat, lon);
+  const moonAlt = ms => bodyAltAzAt('moon', jdOf(ms), lat, lon).alt;
+  const sunrise = nextCrossing(sunAlt, t0, -0.833, +1), sunset = nextCrossing(sunAlt, t0, -0.833, -1);
+  const duskA = nextCrossing(sunAlt, t0, -18, -1), dawnA = nextCrossing(sunAlt, t0, -18, +1);
+  const moonrise = nextCrossing(moonAlt, t0, -0.5, +1), moonset = nextCrossing(moonAlt, t0, -0.5, -1);
+  const ph = moonPhaseInfo(dDays(jdOf(t0)));
+  const orDash = (ms, arrow) => ms ? `${arrow} ${fmtT(ms)}` : '—';
+  let smRows = `<div class="kind" style="margin-top:2px">Sun &amp; Moon rise / set</div>
+    <div class="row"><span class="k">☀️ Sun</span><span class="v">${orDash(sunrise, '↑')} · ${orDash(sunset, '↓')}</span></div>
+    ${(duskA || dawnA) ? `<div class="row"><span class="k">🌌 Astro dark</span><span class="v">${duskA ? fmtT(duskA) : '—'} – ${dawnA ? fmtT(dawnA) : '—'}</span></div>` : ''}
+    <div class="row"><span class="k">${ph.emoji} Moon · ${ph.name}</span><span class="v">${orDash(moonrise, '↑')} · ${orDash(moonset, '↓')} · ${ph.illum}%</span></div>`;
   let rows = '', sub = '';
   if (darkStart == null) {
     sub = 'No dark sky in the next 24 h here.';
@@ -5977,7 +6302,7 @@ function showTonight() {
   const dt = Sim.date;
   card.innerHTML = `<button class="close">×</button><h3>Tonight’s Sky</h3>
     <div class="kind">${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} · ${sub}</div>
-    ${rows}<div class="fact">Naked-eye objects, as seen from ${Loc.name}. Tap a visible one to track it.</div>`;
+    ${smRows}${rows}<div class="fact">Naked-eye objects, as seen from ${Loc.name}. Tap a visible one to track it.</div>`;
   card.querySelector('.close').onclick = () => card.classList.remove('open');
   card.querySelectorAll('.row.clickable').forEach(r => r.onclick = () => {
     if (r.dataset.radiant) {
@@ -6782,6 +7107,84 @@ refreshSpeedUI();
 }
 window.addEventListener('resize', () => { Orrery.resize(); Sky.resize(); });
 
+/* ---- Shareable permalink: copy a link to (or restore) the exact view ---- */
+function buildShareURL() {
+  const p = new URLSearchParams();
+  p.set('v', activeView);
+  p.set('t', Math.round(Sim.ms));
+  p.set('lat', Loc.lat.toFixed(4)); p.set('lon', Loc.lon.toFixed(4));
+  if (Loc.name) p.set('loc', Loc.name);
+  if (Loc.heading != null) p.set('h', Loc.heading);
+  const f = activeView === 'orrery' ? Orrery.focusBody : activeView === 'sky' ? Sky.followBody : null;
+  if (f) p.set('f', f);
+  return location.origin + location.pathname + '?' + p.toString();
+}
+// Render the active 3D view + a caption strip to a downloadable PNG "postcard".
+function exportPostcard() {
+  const m = activeView === 'orrery' ? Orrery : activeView === 'sky' ? Sky : null;
+  if (!m) return;
+  m.renderer.render(m.scene, m.camera);                      // fresh frame into the preserved buffer
+  const src = m.renderer.domElement, W = src.width, H = src.height, barH = Math.round(W * 0.05), gap = Math.round(W * 0.026);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H + barH;
+  const g = cv.getContext('2d');
+  g.fillStyle = '#04060d'; g.fillRect(0, 0, cv.width, cv.height);
+  g.drawImage(src, 0, 0, W, H);
+  g.fillStyle = '#070b16'; g.fillRect(0, H, W, barH);
+  g.textBaseline = 'middle';
+  g.fillStyle = '#5eead4'; g.font = `600 ${Math.round(barH * 0.42)}px system-ui, sans-serif`; g.textAlign = 'left';
+  g.fillText('ASTRODECK', gap, H + barH / 2);
+  const dt = Sim.date, ds = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+  g.fillStyle = '#9fb0c8'; g.font = `${Math.round(barH * 0.34)}px ui-monospace, monospace`; g.textAlign = 'right';
+  g.fillText(`${Loc.name || ''} · ${ds}`, W - gap, H + barH / 2);
+  const a = document.createElement('a'); a.href = cv.toDataURL('image/png'); a.download = `astrodeck-${activeView}.png`; a.click();
+}
+{
+  const shareBtn = document.getElementById('share-btn');
+  let pop = null;
+  const flash = () => { shareBtn.classList.add('copied'); shareBtn.textContent = '✓'; setTimeout(() => { shareBtn.classList.remove('copied'); shareBtn.textContent = '⤴'; }, 1400); };
+  const close = () => { if (pop) { pop.remove(); pop = null; } };
+  shareBtn.onclick = e => {
+    e.stopPropagation();
+    if (pop) return close();
+    pop = document.createElement('div'); pop.className = 'share-pop';
+    const canImg = activeView === 'orrery' || activeView === 'sky';
+    pop.innerHTML = `<button data-a="link">🔗 Copy link to this view</button>${canImg ? `<button data-a="img">📷 Save as image</button>` : ''}`;
+    document.body.appendChild(pop);
+    const r = shareBtn.getBoundingClientRect();
+    pop.style.top = (r.bottom + 8) + 'px'; pop.style.right = (window.innerWidth - r.right) + 'px';
+    pop.querySelector('[data-a="link"]').onclick = async () => {
+      const url = buildShareURL();
+      try { await navigator.clipboard.writeText(url); }
+      catch (e2) { const ta = document.createElement('textarea'); ta.value = url; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+      close(); flash();
+    };
+    const img = pop.querySelector('[data-a="img"]');
+    if (img) img.onclick = () => { close(); exportPostcard(); };
+  };
+  document.addEventListener('click', close);
+}
+// Apply an incoming shared view (location was already applied pre-init).
+(function applyShareLink() {
+  const P = ShareLink.p;
+  const t = P.get('t');
+  if (t) {
+    const ms = parseInt(t, 10);
+    if (!isNaN(ms)) {
+      Sim.ms = ms; Sim.paused = true; refreshSpeedUI();
+      document.getElementById('t-play').textContent = '▶';
+      const dt = new Date(ms);
+      document.getElementById('t-date').value = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}T${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+    }
+  }
+  const v = P.get('v');
+  if (v && ['orrery', 'sky', 'missions', 'feeds'].includes(v)) document.querySelector(`#tabs button[data-view="${v}"]`).click();
+  const f = P.get('f');
+  if (f) setTimeout(() => {
+    if (activeView === 'orrery' && (Orrery.meshes[f] || Orrery.moonMeshes[f] || f === 'iss')) Orrery.setFocus(f);
+    else if (activeView === 'sky' && Sky._focusSel) { Sky._focusSel.value = f; Sky._focusSel.dispatchEvent(new Event('change')); }
+  }, 200);
+})();
+
 /* ===================== Cinematic Tour ===================== */
 // Scripted 90s flythrough for screen-capture. Drives camera + layers on a fixed
 // timeline so a clean take is one keypress. Trigger: ?tour=1 (auto, 3-2-1
@@ -7526,7 +7929,7 @@ setTimeout(() => document.getElementById('loader').classList.add('done'), 700);
 const _tourParam = new URLSearchParams(location.search).get('tour');
 if (_tourParam) {
   setTimeout(() => Tour.countdownStart(), 1400);              // auto-run for capture
-} else if (!localStorage.getItem('astrodeck.location')) {
+} else if (!localStorage.getItem('astrodeck.location') && !ShareLink.hasLoc) {
   document.getElementById('loader-text').textContent = 'Set your observing location…';
   setTimeout(openLocModal, 1100);
 } else {
